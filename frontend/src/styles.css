@@ -192,3 +192,420 @@ footer > span:nth-child(2) i { margin-left: 8px; color: #9aa8b2; font-style: nor
   footer { padding: 13px 17px; flex-wrap: wrap; }
   footer > span:nth-child(2) { order: 3; width: 100%; }
 }
+
+:root {
+  --navy: #173b5e;
+  --muted: #62788a;
+  --border: #dbe5ec;
+  --amber: #e9a23b;
+  --green: #318763;
+  color: #172b3a;
+  background: #f3f6f8;
+}
+
+body {
+  background:
+    radial-gradient(ellipse at 82% 4%, rgba(226, 237, 241, .62), transparent 34rem),
+    #f3f6f8;
+}
+
+.topbar, .main-nav, footer {
+  background: rgba(255, 255, 255, .94);
+}
+
+.topbar {
+  height: 72px;
+}
+
+.main-nav {
+  height: 52px;
+}
+
+.brand {
+  font-size: 19px;
+}
+
+.brand-mark {
+  width: 36px;
+  height: 36px;
+  border-radius: 11px;
+  box-shadow: 0 4px 10px rgba(23, 59, 94, .16);
+}
+
+.topbar-right, .main-nav {
+  font-size: 13px;
+}
+
+main {
+  padding-top: 32px;
+}
+
+.hero {
+  min-height: 286px;
+  padding: 42px 48px;
+  border: 1px solid rgba(255, 255, 255, .08);
+  border-radius: 22px;
+  box-shadow: 0 18px 42px rgba(23, 59, 94, .13);
+}
+
+.hero h1 {
+  font-size: clamp(36px, 4vw, 50px);
+}
+
+.hero-content > p {
+  font-size: 14px;
+}
+
+.hero-button {
+  padding: 13px 17px;
+  border-radius: 9px;
+  font-size: 13px;
+}
+
+.hero-link {
+  font-size: 13px;
+}
+
+.eyebrow {
+  font-size: 10px;
+}
+
+.section-intro {
+  padding-top: 34px;
+  padding-bottom: 17px;
+}
+
+.section-kicker {
+  font-size: 10px;
+}
+
+.section-intro h2 {
+  font-size: 22px;
+}
+
+.lesson-progress {
+  font-size: 10px;
+}
+
+.workspace-grid {
+  gap: 20px;
+}
+
+.panel {
+  border-color: #e1e9ee;
+  border-radius: 18px;
+  box-shadow: 0 8px 26px rgba(23, 59, 94, .065);
+}
+
+.chat-panel, .scene-panel {
+  padding: 22px;
+}
+
+.chat-panel {
+  min-height: 540px;
+}
+
+.panel-heading {
+  gap: 13px;
+  min-height: 44px;
+}
+
+.panel-heading h2 {
+  margin: 0;
+  font-size: 16px;
+}
+
+.panel-heading p {
+  font-size: 12px;
+}
+
+.avatar {
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  font-size: 11px;
+}
+
+.avatar-small {
+  width: 27px;
+  height: 27px;
+  border-radius: 9px;
+  font-size: 9px;
+}
+
+.verified-pill, .scene-live {
+  padding: 7px 10px;
+  font-size: 10px;
+}
+
+.conversation {
+  min-height: 240px;
+  max-height: 370px;
+  margin-top: 18px;
+  padding: 16px;
+  border-color: #e7edf1;
+  border-radius: 13px;
+  background: #f5f8fa;
+}
+
+.empty-state {
+  min-height: 205px;
+}
+
+.empty-icon {
+  width: 42px;
+  height: 42px;
+  border-radius: 13px;
+  font-size: 21px;
+}
+
+.empty-state h3 {
+  font-size: 15px;
+}
+
+.empty-state p {
+  font-size: 12px;
+}
+
+.learner-message, .coach-message {
+  padding: 13px 15px;
+  border-radius: 13px;
+}
+
+.learner-message {
+  border-bottom-right-radius: 4px;
+  background: #e7f0f6;
+}
+
+.coach-message {
+  border-color: #e5ebef;
+  border-bottom-left-radius: 4px;
+}
+
+.learner-message p, .coach-message > p {
+  font-size: 14px;
+  line-height: 1.65;
+}
+
+.message-label, .message-author {
+  font-size: 10px;
+}
+
+.remember-box {
+  padding: 9px 11px;
+  font-size: 11px;
+}
+
+.question-form {
+  gap: 10px;
+  margin-top: 15px;
+}
+
+.question-form .question-input {
+  min-height: 54px;
+  padding: 12px;
+  border-color: #d9e3ea;
+  border-radius: 11px;
+  font-size: 13px;
+}
+
+.question-form .action-button, .action-button {
+  min-height: 42px;
+  padding: 10px 15px;
+  border-radius: 10px;
+  font-size: 12px;
+  transition: background-color .18s ease, transform .18s ease, box-shadow .18s ease;
+}
+
+.action-button:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 5px 12px rgba(23, 59, 94, .16);
+}
+
+.prompt-area {
+  margin-top: 19px;
+}
+
+.prompt-heading {
+  margin-bottom: 10px;
+}
+
+.prompt-heading h3 {
+  font-size: 12px;
+}
+
+.prompt-heading span, .prompt-chip {
+  font-size: 11px;
+}
+
+.prompt-chip {
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 9px;
+}
+
+.prompt-chip:hover {
+  border-color: #9eb8c9;
+  background: #f3f8fb;
+}
+
+.prompt-number {
+  font-size: 9px;
+}
+
+.scene-canvas {
+  height: 330px;
+  border-radius: 13px;
+  background: #e7eff2;
+}
+
+.scene-controls {
+  padding-top: 16px;
+}
+
+.status-line {
+  font-size: 12px;
+}
+
+.scene-controls p {
+  font-size: 11px;
+}
+
+.vehicle-key > span {
+  font-size: 10px;
+}
+
+.vehicle-key b {
+  font-size: 9px;
+}
+
+.quick-rules {
+  margin-top: 23px;
+  padding: 19px 22px;
+  border-color: #e1e9ee;
+  border-radius: 16px;
+  box-shadow: 0 5px 18px rgba(23, 59, 94, .04);
+}
+
+.rules-heading h2 {
+  font-size: 15px;
+}
+
+.rule-list > div {
+  font-size: 11px;
+}
+
+.rule-list b {
+  font-size: 10px;
+}
+
+footer {
+  min-height: 64px;
+  font-size: 10px;
+}
+
+.footer-brand {
+  font-size: 12px;
+}
+
+a:focus-visible, button:focus-visible, textarea:focus-visible {
+  outline: 3px solid #e9a23b;
+  outline-offset: 3px;
+}
+
+@media (max-width: 900px) {
+  .hero {
+    min-height: 270px;
+  }
+
+  .scene-canvas {
+    height: 380px;
+  }
+}
+
+@media (max-width: 600px) {
+  .topbar {
+    height: 62px;
+    padding: 0 17px;
+  }
+
+  .main-nav {
+    height: 48px;
+  }
+
+  main {
+    padding-top: 18px;
+  }
+
+  .hero {
+    min-height: 300px;
+    padding: 25px 20px;
+    border-radius: 18px;
+  }
+
+  .hero h1 {
+    font-size: 33px;
+  }
+
+  .hero-content > p {
+    max-width: 300px;
+    font-size: 12px;
+  }
+
+  .hero-button, .hero-link {
+    font-size: 11px;
+  }
+
+  .section-intro h2 {
+    font-size: 17px;
+  }
+
+  .lesson-progress {
+    font-size: 8px;
+  }
+
+  .chat-panel, .scene-panel {
+    padding: 15px;
+  }
+
+  .chat-panel {
+    min-height: 500px;
+  }
+
+  .panel-heading h2 {
+    font-size: 14px;
+  }
+
+  .panel-heading p {
+    font-size: 10px;
+  }
+
+  .verified-pill {
+    font-size: 8px;
+  }
+
+  .learner-message p, .coach-message > p {
+    font-size: 13px;
+  }
+
+  .prompt-chip {
+    font-size: 10px;
+  }
+
+  .scene-canvas {
+    height: 290px;
+  }
+
+  .quick-rules {
+    padding: 15px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    scroll-behavior: auto !important;
+    animation-duration: .01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .01ms !important;
+  }
+}

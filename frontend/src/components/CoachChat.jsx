@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { suggestedQuestions, suggestedPrompt } from '../data/drivingScenarios.js';
-import { askMockCoach } from '../services/mockChatApi.js';
+import { askCoach } from '../services/chatApi.js';
 
 export default function CoachChat({ onScenarioChange }) {
   const [selectedId, setSelectedId] = useState(null);
@@ -15,7 +15,7 @@ export default function CoachChat({ onScenarioChange }) {
     setMessages((current) => [...current, { role: 'user', content: prompt }]);
     setLoading(true);
     try {
-      const response = await askMockCoach(prompt);
+      const response = await askCoach(prompt);
       const scenarioId = response.visualization?.scenario_id;
       if (scenarioId) {
         setSelectedId(scenarioId);
@@ -30,7 +30,7 @@ export default function CoachChat({ onScenarioChange }) {
     } catch (error) {
       setMessages((current) => [...current, {
         role: 'assistant',
-        content: `The mock coach could not respond: ${error.message}`,
+        content: `The Django backend could not respond: ${error.message}`,
       }]);
     } finally {
       setLoading(false);
@@ -48,7 +48,7 @@ export default function CoachChat({ onScenarioChange }) {
         <div className="avatar" aria-hidden="true">DW</div>
         <div>
           <h2 id="coach-heading">Your driving coach</h2>
-          <p>Local mock coach <span className="separator">·</span> Driving practice</p>
+          <p>Django API <span className="separator">·</span> Driving practice</p>
         </div>
         <span className="verified-pill"><span />Practice mode</span>
       </div>
