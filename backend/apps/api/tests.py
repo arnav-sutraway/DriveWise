@@ -1,34 +1,147 @@
-from django.test import TestCase
+from unittest import mock
+
 from django.conf import settings
+from django.test import TestCase, override_settings
+
+from apps.chat.services.rag import NO_ANSWER_MESSAGE, answer_question
+from apps.chat.services.response_validation import CitationValidator
+from apps.knowledge.models import Chunk, Document
+from apps.knowledge.services.document_ingestion import RawPage, ingest_pages
+from apps.knowledge.services.embedding_generation import HashingEmbedder
+from apps.knowledge.services.preprocessing import chunk_pages
+
+RIGHT_OF_WAY_PAGE = """At a four-way stop, the first vehicle to stop at the intersection goes first.
+When two vehicles stop at the same time, the driver on the left yields to the
+driver on the right. Always yield to pedestrians in the crosswalk before you
+proceed through the intersection, even when it is otherwise your turn to go."""
 
 
-class ApiEndpointTests(TestCase):
+class FakeLLM:
+    def __init__(self, reply):
+        self.reply = reply
+        self.prompts = []
+
+    def generate(self, system_prompt, user_prompt):
+        self.prompts.append(user_prompt)
+        return self.reply
+
+
+@override_settings(RAG_EMBEDDER="hashing", RAG_MIN_SCORE=0.1, RAG_TOP_K=3)
+class RagTestCase(TestCase):
+    def setUp(self):
+        self.document = ingest_pages([RawPage(RIGHT_OF_WAY_PAGE, 34)], title="Georgia Driver's Manual",
+                                     source_path="georgia.pdf", state="Georgia", edition="2026",
+                                     embedder=HashingEmbedder())
+
+
+class IngestionTests(RagTestCase):
+    def test_pages_are_chunked_and_embedded(self):
+        chunk = self.document.chunks.get()
+        self.assertEqual(chunk.page, 34)
+        self.assertEqual(len(chunk.embedding), 512)
+
+    def test_reingesting_the_same_file_replaces_it(self):
+        ingest_pages([RawPage(RIGHT_OF_WAY_PAGE, 1)], title="Georgia Driver's Manual",
+                     source_path="georgia.pdf", embedder=HashingEmbedder())
+        self.assertEqual(Document.objects.count(), 1)
+
+    def test_long_text_is_split_with_overlap(self):
+        words = " ".join(f"word{i}" for i in range(500))
+        chunks = chunk_pages([RawPage(words, 3)], chunk_words=200, overlap_words=40)
+        self.assertEqual(len(chunks), 3)
+        self.assertEqual(chunks[1].text.split()[0], "word160")
+        self.assertEqual(chunks[0].page, 3)
+
+
+class CitationValidatorTests(TestCase):
+    def test_answer_with_valid_citation_is_grounded(self):
+        result = CitationValidator().validate("Yield to the right [1].", 3)
+        self.assertTrue(result.grounded)
+        self.assertEqual(result.cited, [1])
+
+    def test_invalid_citations_are_removed(self):
+        result = CitationValidator().validate("Yield [1][7].", 3)
+        self.assertEqual(result.answer, "Yield [1].")
+
+    def test_no_citations_or_no_answer_token_is_not_grounded(self):
+        self.assertFalse(CitationValidator().validate("Yield to the right.", 3).grounded)
+        self.assertFalse(CitationValidator().validate("NO_ANSWER", 3).grounded)
+
+
+class RagPipelineTests(RagTestCase):
+    def test_grounded_answer_uses_retrieved_passages(self):
+        llm = FakeLLM("If you stop at the same time, yield to the car on your right [1].")
+        result = answer_question("Who goes first at a four-way stop?", llm=llm)
+
+        self.assertTrue(result.grounded)
+        self.assertIn("[1]", result.answer)
+        self.assertIn("four-way stop", llm.prompts[0])
+        self.assertIn("(p. 34)", llm.prompts[0])
+
+    def test_model_refusal_returns_no_answer_message(self):
+        result = answer_question("Who goes first at a four-way stop?", llm=FakeLLM("NO_ANSWER"))
+        self.assertFalse(result.grounded)
+        self.assertEqual(result.answer, NO_ANSWER_MESSAGE)
+
+    def test_uncited_answer_is_rejected(self):
+        result = answer_question("Who goes first?", llm=FakeLLM("Just go whenever you feel like it."))
+        self.assertFalse(result.grounded)
+        self.assertEqual(result.answer, NO_ANSWER_MESSAGE)
+
+    @override_settings(RAG_MIN_SCORE=0.99)
+    def test_nothing_relevant_skips_the_llm(self):
+        llm = FakeLLM("should not be called [1]")
+        result = answer_question("What is the cheapest car insurance?", llm=llm)
+        self.assertFalse(result.grounded)
+        self.assertEqual(llm.prompts, [])
+
+
+class ApiEndpointTests(RagTestCase):
+    def post(self, data):
+        return self.client.post("/api/v1/chat/", data=data, content_type="application/json")
+
     def test_django_uses_frontend_build_directory(self):
-        self.assertEqual(
-            settings.FRONTEND_BUILD_DIR,
-            settings.BASE_DIR.parent / "frontend" / "dist",
-        )
+        self.assertEqual(settings.FRONTEND_BUILD_DIR, settings.BASE_DIR.parent / "frontend" / "dist")
 
     def test_health_endpoint_returns_ok(self):
         response = self.client.get("/api/v1/health/")
-
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json(), {"status": "ok"})
 
-    def test_chat_endpoint_is_a_non_implemented_placeholder(self):
-        response = self.client.post(
-            "/api/v1/chat/",
-            data={"message": "How does a four-way stop work?"},
-            content_type="application/json",
-        )
+    def test_chat_endpoint_returns_grounded_answer(self):
+        llm = FakeLLM("Yield to the driver on your right [1].")
+        with mock.patch("apps.chat.services.rag.get_llm", return_value=llm):
+            response = self.post({"message": "Who goes first at a four-way stop?"})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json(), {"answer": "Yield to the driver on your right [1].", "grounded": True})
 
-        self.assertEqual(response.status_code, 501)
-        self.assertEqual(
-            response.json(),
-            {"detail": "Chat responses are not implemented yet."},
-        )
+    def test_chat_endpoint_validates_input(self):
+        for data in ({}, {"message": "   "}, {"message": 5}, {"message": "x" * 1001}):
+            self.assertEqual(self.post(data).status_code, 400, data)
+        self.assertEqual(self.post("not json").status_code, 400)
+
+    @override_settings(RAG_EMBEDDER="gemini", GEMINI_API_KEY="")
+    def test_missing_api_key_returns_503(self):
+        response = self.post({"message": "Who goes first?"})
+        self.assertEqual(response.status_code, 503)
+        self.assertIn("GEMINI_API_KEY", response.json()["detail"])
+
+    def test_provider_failure_returns_502(self):
+        class BrokenLLM:
+            def generate(self, *_):
+                raise RuntimeError("quota exceeded")
+
+        with mock.patch("apps.chat.services.rag.get_llm", return_value=BrokenLLM()), \
+                self.assertLogs("apps.api.views", level="ERROR"):
+            response = self.post({"message": "Who goes first at a four-way stop?"})
+        self.assertEqual(response.status_code, 502)
 
     def test_chat_endpoint_only_accepts_post(self):
-        response = self.client.get("/api/v1/chat/")
+        self.assertEqual(self.client.get("/api/v1/chat/").status_code, 405)
 
-        self.assertEqual(response.status_code, 405)
+    def test_empty_knowledge_base_says_no_answer(self):
+        Chunk.objects.all().delete()
+        with mock.patch("apps.chat.services.rag.get_llm", return_value=FakeLLM("x [1]")):
+            response = self.post({"message": "Who goes first?"})
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(response.json()["grounded"])

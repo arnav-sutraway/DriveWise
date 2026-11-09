@@ -1,6 +1,6 @@
 # DriveWise AI
 
-DriveWise is a driving education practice app with a React/Vite frontend, a Django API scaffold, and an interactive Three.js town intersection. The backend currently provides a health endpoint and a deliberately unimplemented chat endpoint. It does not include chatbot, dataset, embedding, retrieval, model, authentication, or admin-story functionality.
+DriveWise is a driving education app with a React/Vite frontend, a Django RAG backend, and an interactive Three.js town intersection. Questions are answered only from the driver's manuals in the knowledge base, with numbered citations; if nothing relevant is found, the coach says so instead of guessing.
 
 ## Requirements
 
@@ -26,33 +26,42 @@ python -m venv .venv
 # Windows PowerShell:
 .\.venv\Scripts\Activate.ps1
 pip install -r requirements.txt
+cp .env.example .env          # then paste your GEMINI_API_KEY into .env
 python manage.py migrate
+python manage.py ingest_documents --state Georgia --edition 2026   # loads data/manuals/
 python manage.py runserver
 ```
 
-Open the localhost URL printed by Vite. Vite proxies `/api/` requests to Django at `http://127.0.0.1:8000`; the frontend API uses a relative URL so the API path stays the same in development and production.
+## RAG chatbot (backend)
 
-To serve the built frontend from Django instead, build it first, then open the Django server root:
+1. Get a free Gemini API key at https://aistudio.google.com/apikey and put it in `backend/.env` (never commit `.env`).
+2. Put the Georgia Driver's Manual PDF (from https://dds.georgia.gov) in `backend/data/manuals/`.
+3. Run `python manage.py ingest_documents --state Georgia --edition 2026`. Re-running replaces the same files. Changing the embedding model requires re-ingesting.
 
-```bash
-# In frontend/
-npm run build
+Pipeline (`backend/apps/`):
 
-# In backend/
-python manage.py runserver
-```
+| Step | File |
+| --- | --- |
+| Read PDF, save chunks | `knowledge/services/document_ingestion.py` |
+| Split into chunks | `knowledge/services/preprocessing.py` |
+| Embed (`RAG_EMBEDDER=gemini`, or `hashing` offline) | `knowledge/services/embedding_generation.py` |
+| Retrieve (cosine search, `RAG_TOP_K`, `RAG_MIN_SCORE`) | `knowledge/services/vector_retrieval.py` |
+| Build prompt | `chat/services/prompts.py` |
+| Generate (Gemini, `RAG_CHAT_MODEL`) | `chat/services/inference.py` |
+| Check the answer cites a retrieved passage | `chat/services/response_validation.py` |
+| Run the steps above | `chat/services/rag.py` |
 
-Django resolves the frontend and build directories from `backend/config/settings.py`, not from the shell's current directory. The Vite build uses `/static/frontend/` asset URLs, and Django's static-files configuration maps that prefix to `frontend/dist/`.
+`POST /api/v1/chat/` with `{"message": "..."}` returns `{"answer": "...", "grounded": true}`. `grounded: false` means no relevant passage was found (or the model's answer didn't cite one) and `answer` is the "couldn't find that" message. Errors: 400 bad input, 503 missing API key, 502 provider failure.
 
 ## Usage
 
-- Choose a suggested question or enter a driving-rule question and select **Ask coach**. The frontend sends the message to Django, which currently returns HTTP 501 because chat behavior is intentionally not implemented.
+- Choose a suggested question or enter a driving-rule question and select **Ask coach**. Answers come only from the manuals in the knowledge base.
 - Use **Play demo** to watch the vehicles approach, stop, highlight the scripted first-to-stop vehicle, and proceed through the intersection.
 - Drag the 3D scene to orbit the view and scroll/pinch to zoom.
 
-`GET /api/v1/health/` checks the backend. `POST /api/v1/chat/` is only a placeholder and returns 501. The predefined frontend scenario and its 3D demonstration remain in place; chat responses do not control scenario selection or animation.
+`GET /api/v1/health/` checks the backend. `POST /api/v1/chat/` answers questions (see above). The predefined frontend scenario and its 3D demonstration remain in place; chat responses do not control scenario selection or animation.
 
-The backend service boundaries are separated under `backend/apps/`: API routing, document ingestion, embedding generation, vector retrieval, LLM inference, and response validation. These are interfaces only. No paid API or external vector database is configured. Future scenario controls should be selected from the predefined frontend scenario set rather than supplied as arbitrary IDs or animation instructions.
+Future scenario controls should be selected from the predefined frontend scenario set rather than supplied as arbitrary IDs or animation instructions.
 
 For local development, Django uses SQLite and a development-only secret key. Set `DJANGO_SECRET_KEY`, `DJANGO_DEBUG=false`, and `DJANGO_ALLOWED_HOSTS` appropriately before any non-local deployment. Production deployments should collect and serve static files from `backend/staticfiles/` or configure a static-file host.
 
@@ -90,6 +99,7 @@ backend/
   config/       Django settings and project entry points
   apps/api/     Versioned health and chat routes
   apps/frontend/ Serves the built SPA from Django
-  apps/chat/    Inference and response-validation interfaces
-  apps/knowledge/ Document-ingestion, embedding, and retrieval interfaces
+  apps/chat/    RAG pipeline, prompt, LLM inference, answer validation
+  apps/knowledge/ Documents/chunks, PDF ingestion, chunking, embeddings, retrieval
+  data/manuals/ Source PDFs for the knowledge base
 ```

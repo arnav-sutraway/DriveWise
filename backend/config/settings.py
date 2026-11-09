@@ -1,10 +1,17 @@
 import os
 from pathlib import Path
 
+try:
+    from dotenv import load_dotenv
+except ImportError:  # python-dotenv is optional
+    load_dotenv = None
+
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 FRONTEND_DIR = BASE_DIR.parent / "frontend"
 FRONTEND_BUILD_DIR = FRONTEND_DIR / "dist"
+if load_dotenv:
+    load_dotenv(BASE_DIR / ".env")
 SECRET_KEY = os.environ.get("DJANGO_SECRET_KEY", "local-development-only-not-for-production")
 DEBUG = os.environ.get("DJANGO_DEBUG", "true").lower() == "true"
 ALLOWED_HOSTS = [
@@ -21,6 +28,7 @@ INSTALLED_APPS = [
     "django.contrib.messages",
     "django.contrib.staticfiles",
     "apps.api",
+    "apps.knowledge",
 ]
 
 MIDDLEWARE = [
@@ -80,3 +88,17 @@ STATICFILES_DIRS = (
     else []
 )
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
+
+# --- RAG chatbot -----------------------------------------------------------
+# Providers: RAG_EMBEDDER = "gemini" | "hashing" (offline, no key); RAG_LLM = "gemini".
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
+RAG_EMBEDDER = os.environ.get("RAG_EMBEDDER", "gemini")
+RAG_LLM = os.environ.get("RAG_LLM", "gemini")
+RAG_EMBEDDING_MODEL = os.environ.get("RAG_EMBEDDING_MODEL", "gemini-embedding-001")
+RAG_EMBEDDING_DIMENSIONS = int(os.environ.get("RAG_EMBEDDING_DIMENSIONS", "768"))
+RAG_CHAT_MODEL = os.environ.get("RAG_CHAT_MODEL", "gemini-3.1-flash-lite")
+RAG_TOP_K = int(os.environ.get("RAG_TOP_K", "5"))
+# Passages scoring below this cosine similarity are ignored. If nothing is left,
+# the bot says it couldn't find the answer instead of guessing (US 3).
+RAG_MIN_SCORE = float(os.environ.get("RAG_MIN_SCORE", "0.55"))
+KNOWLEDGE_DATA_DIR = BASE_DIR / "data" / "manuals"
