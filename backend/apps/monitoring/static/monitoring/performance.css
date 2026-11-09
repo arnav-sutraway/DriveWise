@@ -1,0 +1,23 @@
+.performance { max-width: 1240px; }
+.performance .intro { color: var(--body-quiet-color); font-size: 16px; margin: 0 0 24px; }
+.performance-toolbar { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; margin-bottom: 24px; }
+.performance-toolbar .button { border: 0; cursor: pointer; padding: 9px 16px; }
+.refresh-toggle { margin-left: auto; display: flex; gap: 8px; align-items: center; }
+.performance-banner { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; border: 1px solid var(--hairline-color); border-left: 5px solid var(--link-fg); border-radius: 6px; padding: 16px 20px; margin-bottom: 24px; background: var(--darkened-bg); }
+.performance-banner.warning { border-left-color: #d68b17; }
+.performance-banner.good { border-left-color: #328354; }
+.performance-banner span { color: var(--body-quiet-color); font-size: 12px; }
+.metric-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; margin-bottom: 24px; }
+.metric-card, .performance-section { border: 1px solid var(--hairline-color); border-radius: 8px; padding: 20px; background: var(--body-bg); }
+.performance .metric-card h2 { font-size: 13px; color: var(--body-quiet-color); margin: 0 0 14px; }
+.performance .metric-value { font-size: 30px; line-height: 1.2; font-weight: 600; margin: 0 0 10px; font-variant-numeric: tabular-nums; }
+.metric-card p:last-child, .performance-section p, .performance-footnote { color: var(--body-quiet-color); font-size: 12px; line-height: 1.6; }
+.detail-grid { display: grid; grid-template-columns: 3fr 2fr; gap: 16px; margin-bottom: 20px; }
+.performance-section h2 { margin-top: 0; font-size: 17px; }
+.performance table { width: 100%; }
+.performance th, .performance td { padding: 12px 8px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.table-scroll { overflow-x: auto; }
+.threshold-warning, .empty-note { padding: 12px 16px; border-left: 3px solid #d68b17; background: var(--darkened-bg); }
+.performance-footnote { margin-top: 20px; }
+@media (max-width: 1000px) { .metric-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .detail-grid { grid-template-columns: 1fr; } }
+@media (max-width: 600px) { .metric-grid { grid-template-columns: 1fr; } .refresh-toggle { margin-left: 0; width: 100%; } .metric-card, .performance-section { padding: 16px; } }
