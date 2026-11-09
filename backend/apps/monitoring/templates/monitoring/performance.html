@@ -1,0 +1,65 @@
+{% extends "admin/base_site.html" %}
+{% load static %}
+
+{% block extrastyle %}{{ block.super }}<link rel="stylesheet" href="{% static 'monitoring/performance.css' %}">{% endblock %}
+{% block extrahead %}{{ block.super }}<script src="{% static 'monitoring/performance.js' %}" defer></script>{% endblock %}
+{% block breadcrumbs %}<div class="breadcrumbs"><a href="{% url 'admin:index' %}">Home</a> &rsaquo; Chatbot performance</div>{% endblock %}
+{% block nav-sidebar %}{% endblock %}
+
+{% block content %}
+<div class="performance">
+  <p class="intro">Response speed and system failures for the driving coach.</p>
+  <form method="get" class="performance-toolbar">
+    <label for="window">Time window</label>
+    <select id="window" name="window">
+      <option value="15" {% if minutes == 15 %}selected{% endif %}>Last 15 minutes</option>
+      <option value="60" {% if minutes == 60 %}selected{% endif %}>Last hour</option>
+    </select>
+    <button type="submit" class="button">Refresh</button>
+    <label class="refresh-toggle"><input type="checkbox" id="auto-refresh" checked> Refresh every 30 seconds</label>
+  </form>
+
+  {% if unavailable %}
+    <div class="performance-banner warning" role="alert"><strong>Metrics unavailable</strong><p>Performance data could not be read. Refresh to try again.</p></div>
+  {% else %}
+    <div class="performance-banner {{ status_class }}" role="status">
+      <strong>{{ status }}</strong>
+      <span>Updated {{ updated_at|date:"H:i:s T" }} · Window begins {{ start|date:"H:i T" }}</span>
+    </div>
+    {% for warning in warnings %}<p class="threshold-warning">{{ warning }}</p>{% endfor %}
+
+    <div class="metric-grid">
+      <section class="metric-card"><h2>Average response</h2><p class="metric-value">{{ overall.average }}</p><p>Backend processing time</p></section>
+      <section class="metric-card"><h2>p95 latency band</h2><p class="metric-value">{{ overall.p95 }}</p><p>Estimated from duration buckets</p></section>
+      <section class="metric-card"><h2>Slowest response</h2><p class="metric-value">{{ overall.maximum }}</p><p>Longest completed request</p></section>
+      <section class="metric-card"><h2>System failure rate</h2><p class="metric-value">{{ failure_rate }}</p><p>Server failures / valid requests</p></section>
+    </div>
+    {% if not overall.samples %}<p class="empty-note">No completed valid chat requests in this window. Ask the coach a question, then refresh. Missing measurements are not a healthy status.</p>{% endif %}
+
+    <div class="detail-grid">
+      <section class="performance-section">
+        <h2>Where time is spent</h2>
+        <div class="table-scroll"><table>
+          <caption class="visually-hidden">Stage timing for completed attempts, including failed attempts</caption>
+          <thead><tr><th scope="col">Stage</th><th scope="col">Average</th><th scope="col">p95 band</th><th scope="col">Maximum</th></tr></thead>
+          <tbody>{% for stage in stages %}<tr><th scope="row">{{ stage.label }}</th><td>{{ stage.average }}</td><td>{{ stage.p95 }}</td><td>{{ stage.maximum }}</td></tr>{% endfor %}</tbody>
+        </table></div>
+        <p>Includes provider retries and failed attempts. Stages that were skipped have no measurement.</p>
+      </section>
+      <section class="performance-section">
+        <h2>Failure breakdown</h2>
+        <table><thead><tr><th scope="col">Category</th><th scope="col">Failures</th></tr></thead>
+          <tbody>{% for failure in failures %}<tr><th scope="row">{{ failure.label }}</th><td>{{ failure.count }}</td></tr>{% endfor %}</tbody>
+        </table>
+        <p>Invalid input is excluded. “No answer found” is a successful response.</p>
+      </section>
+    </div>
+    <section class="performance-section thresholds">
+      <h2>Warning thresholds</h2>
+      <p><strong>p95 latency:</strong> {{ latency_limit }} &nbsp; <strong>Failure rate:</strong> {{ failure_limit }}</p>
+      <p>Thresholds are configured by the administrator. A p95 band is an upper-bound estimate, not an exact percentile; small samples can be noisy.</p>
+    </section>
+    <p class="performance-footnote">Minute-level aggregates only. Measures completed backend requests before metric storage; excludes browser/network time and requests still running. No individual questions, answers, or user history are stored here.</p>
+  {% endif %}
+</div>
+{% endblock %}

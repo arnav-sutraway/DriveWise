@@ -7,6 +7,7 @@ from django.views.decorators.http import require_GET, require_POST
 
 from apps.chat.services.rag import answer_question
 from apps.knowledge.services.embedding_generation import ConfigurationError
+from apps.monitoring.metrics import monitor_chat, note_failure
 
 logger = logging.getLogger(__name__)
 
@@ -19,12 +20,13 @@ def health(request):
 
 
 @csrf_exempt
+@monitor_chat
 @require_POST
 def chat(request):
     """POST {"message": "..."} -> {"answer": str, "grounded": bool}."""
     try:
         payload = json.loads(request.body or b"{}")
-    except json.JSONDecodeError:
+    except (json.JSONDecodeError, UnicodeDecodeError):
         return JsonResponse({"detail": "Request body must be JSON."}, status=400)
 
     message = payload.get("message") if isinstance(payload, dict) else None
@@ -38,8 +40,10 @@ def chat(request):
     try:
         result = answer_question(message)
     except ConfigurationError as error:
+        note_failure(error)
         return JsonResponse({"detail": f"Chatbot is not configured: {error}"}, status=503)
-    except Exception:  # noqa: BLE001 - provider/network failure
+    except Exception as error:  # noqa: BLE001 - provider/network failure
+        note_failure(error)
         logger.exception("Chat request failed")
         return JsonResponse(
             {"detail": "The coach couldn't answer right now. Please try again."}, status=502)

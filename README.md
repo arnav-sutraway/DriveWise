@@ -67,6 +67,61 @@ For local development, Django uses SQLite and a development-only secret key. Set
 
 The `.azure/` directory contains project-planning and integration handoff documents from the original Azure planning workflow. Django and Vite do not read it at runtime, so it can be removed if those planning records are no longer useful.
 
+## Performance monitoring (story 4)
+
+Monitoring runs locally in Django. After installing the backend requirements:
+
+```powershell
+cd backend
+.\.venv\Scripts\python.exe manage.py migrate
+.\.venv\Scripts\python.exe manage.py createsuperuser
+.\.venv\Scripts\python.exe manage.py runserver
+```
+
+Sign in at `http://127.0.0.1:8000/admin/`, then select **Open chatbot performance dashboard**,
+or visit `/admin/performance/`. Only active staff accounts can access it. The dashboard
+supports 15-minute and one-hour windows, refreshes every 30 seconds while visible,
+and lets you pause automatic refresh.
+
+It displays average, maximum, and estimated p95 latency, system failure rate, failure
+categories, and timings for question embedding, passage retrieval, and answer generation.
+The p95 value is the upper bound of the histogram bucket containing the 95th percentile,
+not an exact percentile. Values above the largest bucket display `> 300 s`.
+
+Latency covers completed backend chat requests, including provider retries, up to when
+the response is ready and before storing metrics. It excludes browser/network time and
+in-flight requests. Stage measurements include failed attempts; skipped stages are absent.
+Failure rate is server failures divided by completed valid requests (successes + server
+failures). Invalid input and wrong HTTP methods are excluded from that denominator and
+latency summaries. A normal ungrounded/no-answer response counts as successful.
+
+No targets are assumed. Set these optional values in `backend/.env`, then restart Django:
+
+```dotenv
+# Example targets only; use the targets agreed for your project. Zero disables a threshold.
+PERFORMANCE_LATENCY_WARNING_MS=10000
+PERFORMANCE_FAILURE_WARNING_PERCENT=5
+```
+
+Warnings flag a p95 bucket above the latency target or an error rate at/above its threshold.
+Unset targets show baseline mode; missing samples show **No data**. Read failures show
+**Metrics unavailable**. A metric-write failure emits a diagnostic warning without changing
+the chat response; lost measurements are not retried/reconstructed. These metrics are not
+an external uptime monitor and cannot observe requests lost when the process exits.
+
+Only minute-level aggregates (stage, outcome, duration bucket, sample count, total and
+maximum duration) are persisted. No prompts, answers, individual request timestamps,
+identities, query history, or usage-reporting interface are added. Story 5 remains separate.
+Database-side counter increments support concurrent workers sharing the same database;
+SQLite is intended for local development. Keep metric storage and cleanup in the hosting
+plan when choosing a production database.
+
+To remove aggregates older than seven days, run this locally as needed (schedule after hosting):
+
+```powershell
+.\.venv\Scripts\python.exe manage.py prune_performance_metrics --days 7
+```
+
 ## Verification
 
 ```bash
