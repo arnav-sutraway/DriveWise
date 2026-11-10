@@ -28,22 +28,25 @@ python -m venv .venv
 pip install -r requirements.txt
 cp .env.example .env          # then paste your GEMINI_API_KEY into .env
 python manage.py migrate
-python manage.py ingest_documents --state Georgia --edition 2026   # loads data/manuals/
+python manage.py ingest_documents --state Georgia --edition 2026   # PDFs, .txt, and .md in data/manuals/
 python manage.py runserver
 ```
 
 ## RAG chatbot (backend)
 
 1. Get a free Gemini API key at https://aistudio.google.com/apikey and put it in `backend/.env` (never commit `.env`).
-2. Put the Georgia Driver's Manual PDF (from https://dds.georgia.gov) in `backend/data/manuals/`.
+2. Put local PDFs or UTF-8 `.txt`/`.md` files in `backend/data/manuals/`.
 3. Run `python manage.py ingest_documents --state Georgia --edition 2026`. Re-running replaces the same files. Changing the embedding model requires re-ingesting.
+4. To ingest a public web page, set its exact hostname in `KNOWLEDGE_ALLOWED_HOSTS` in `backend/.env` (for example `KNOWLEDGE_ALLOWED_HOSTS=dds.georgia.gov`), then run `python manage.py ingest_url https://dds.georgia.gov/... --state Georgia --edition 2026`. Only HTTPS pages from explicitly allowlisted hosts are fetched; redirects and non-public DNS addresses are rejected.
+
+The same parsers are available to future upload/API flows via `apps.knowledge.services.file_ingestion.parse_text_upload` / `ingest_text_upload` and `apps.knowledge.services.web_ingestion.fetch_web_page` / `ingest_web_url`. Both paths pass extracted text through shared Unicode, control-character, entity, and whitespace cleanup before chunking and embedding. Text uploads are UTF-8 `.txt` or `.md` files limited to 10 MiB. Web responses support HTML, plain text, and JSON and are limited to 5 MiB.
 
 Pipeline (`backend/apps/`):
 
 | Step | File |
 | --- | --- |
-| Read PDF, save chunks | `knowledge/services/document_ingestion.py` |
-| Split into chunks | `knowledge/services/preprocessing.py` |
+| Read PDF, local text, or allowlisted web pages | `knowledge/services/document_ingestion.py`, `file_ingestion.py`, `web_ingestion.py` |
+| Clean and split text into chunks | `knowledge/services/preprocessing.py` |
 | Embed (`RAG_EMBEDDER=gemini`, or `hashing` offline) | `knowledge/services/embedding_generation.py` |
 | Retrieve (cosine search, `RAG_TOP_K`, `RAG_MIN_SCORE`) | `knowledge/services/vector_retrieval.py` |
 | Build prompt | `chat/services/prompts.py` |
@@ -133,6 +136,7 @@ npm run build
 The backend tests can be run from `backend/`:
 
 ```bash
+python -m pytest apps/knowledge/tests -q
 python manage.py test
 ```
 
@@ -155,6 +159,6 @@ backend/
   apps/api/     Versioned health and chat routes
   apps/frontend/ Serves the built SPA from Django
   apps/chat/    RAG pipeline, prompt, LLM inference, answer validation
-  apps/knowledge/ Documents/chunks, PDF ingestion, chunking, embeddings, retrieval
+  apps/knowledge/ Documents/chunks, PDF/text/web ingestion, preprocessing, embeddings, retrieval
   data/manuals/ Source PDFs for the knowledge base
 ```

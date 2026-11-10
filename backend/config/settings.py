@@ -103,6 +103,11 @@ RAG_TOP_K = int(os.environ.get("RAG_TOP_K", "5"))
 # the bot says it couldn't find the answer instead of guessing (US 3).
 RAG_MIN_SCORE = float(os.environ.get("RAG_MIN_SCORE", "0.55"))
 KNOWLEDGE_DATA_DIR = BASE_DIR / "data" / "manuals"
+KNOWLEDGE_ALLOWED_HOSTS = tuple(
+    host.strip()
+    for host in os.environ.get("KNOWLEDGE_ALLOWED_HOSTS", "").split(",")
+    if host.strip()
+)
 
 # Zero disables a warning threshold while collecting a performance baseline.
 PERFORMANCE_LATENCY_WARNING_MS = float(os.environ.get("PERFORMANCE_LATENCY_WARNING_MS", "0"))
