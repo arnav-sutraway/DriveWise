@@ -1,3 +1,4 @@
+from io import BytesIO
 from unittest import mock
 
 from django.conf import settings
@@ -8,7 +9,9 @@ from apps.chat.services.response_validation import CitationValidator
 from apps.knowledge.models import Chunk, Document
 from apps.knowledge.services.document_ingestion import RawPage, ingest_pages
 from apps.knowledge.services.embedding_generation import HashingEmbedder
+from apps.knowledge.services.file_ingestion import ingest_text_upload
 from apps.knowledge.services.preprocessing import chunk_pages
+from apps.knowledge.services.web_ingestion import WebPage, ingest_web_url
 
 RIGHT_OF_WAY_PAGE = """At a four-way stop, the first vehicle to stop at the intersection goes first.
 When two vehicles stop at the same time, the driver on the left yields to the
@@ -51,6 +54,43 @@ class IngestionTests(RagTestCase):
         self.assertEqual(len(chunks), 3)
         self.assertEqual(chunks[1].text.split()[0], "word160")
         self.assertEqual(chunks[0].page, 3)
+
+    def test_text_upload_is_cleaned_embedded_and_saved(self):
+        source = (
+            "The first vehicle\u0000 to stop goes first. "
+            "Yield to pedestrians before proceeding through the intersection."
+        )
+        document = ingest_text_upload(
+            BytesIO(source.encode("utf-8")),
+            "uploaded_manual.txt",
+            embedder=HashingEmbedder(),
+        )
+
+        chunk = document.chunks.get()
+        self.assertNotIn("\u0000", chunk.text)
+        self.assertNotIn("  ", chunk.text)
+        self.assertEqual(len(chunk.embedding), 512)
+
+    def test_web_page_is_embedded_and_saved(self):
+        page = WebPage(
+            url="https://manuals.example.org/rules",
+            title="Online Manual",
+            text="The first vehicle to stop goes first. Yield to pedestrians before proceeding through the intersection.",
+        )
+        with mock.patch(
+            "apps.knowledge.services.web_ingestion.fetch_web_page",
+            return_value=page,
+        ):
+            document = ingest_web_url(
+                page.url,
+                allowed_hosts=["manuals.example.org"],
+                embedder=HashingEmbedder(),
+            )
+
+        chunk = document.chunks.get()
+        self.assertEqual(document.title, "Online Manual")
+        self.assertEqual(document.source_path, page.url)
+        self.assertEqual(len(chunk.embedding), 512)
 
 
 class CitationValidatorTests(TestCase):
