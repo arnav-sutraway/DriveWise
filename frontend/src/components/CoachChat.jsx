@@ -1,5 +1,6 @@
-import { useState } from 'react';
-import { suggestedQuestions, suggestedPrompt } from '../data/drivingScenarios.js';
+import { useEffect, useState } from 'react';
+import { scenarios, suggestedQuestions, suggestedPrompt } from '../data/drivingScenarios.js';
+import { parkingScenarios } from '../data/parkingScenarios.js';
 import { askCoach } from '../services/chatApi.js';
 import { clearChatHistory, loadChatHistory, saveChatHistory } from '../services/chatHistory.js';
 
