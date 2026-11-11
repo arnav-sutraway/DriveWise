@@ -6,6 +6,7 @@ from django.test import TestCase, override_settings
 
 from apps.chat.services.rag import NO_ANSWER_MESSAGE, answer_question
 from apps.chat.services.response_validation import CitationValidator
+from apps.chat.services.visualizations import visualization_for_question
 from apps.knowledge.models import Chunk, Document
 from apps.knowledge.services.document_ingestion import RawPage, ingest_pages
 from apps.knowledge.services.embedding_generation import HashingEmbedder
@@ -108,6 +109,38 @@ class CitationValidatorTests(TestCase):
         self.assertFalse(CitationValidator().validate("NO_ANSWER", 3).grounded)
 
 
+class VisualizationIntentTests(TestCase):
+    def test_selects_only_predefined_grounded_demonstrations(self):
+        self.assertEqual(
+            visualization_for_question("How do I parallel park?", grounded=True),
+            {"scene": "parking", "scenario_id": "parallel"},
+        )
+        self.assertEqual(
+            visualization_for_question("How do I reverse park?", grounded=True),
+            {"scene": "parking", "scenario_id": "reverse"},
+        )
+        self.assertEqual(
+            visualization_for_question("How do I angle park?", grounded=True),
+            {"scene": "parking", "scenario_id": "angle"},
+        )
+        self.assertEqual(
+            visualization_for_question("How do I park in a 90-degree space?", grounded=True),
+            {"scene": "parking", "scenario_id": "perpendicular"},
+        )
+        self.assertEqual(
+            visualization_for_question("How does a four-way stop work?", grounded=True),
+            {"scene": "intersection", "scenario_id": "four_way_stop"},
+        )
+
+    def test_does_not_select_a_demo_for_ungrounded_or_ambiguous_questions(self):
+        self.assertIsNone(
+            visualization_for_question("How do I parallel park?", grounded=False)
+        )
+        self.assertIsNone(
+            visualization_for_question("What does parking mean?", grounded=True)
+        )
+
+
 class RagPipelineTests(RagTestCase):
     def test_grounded_answer_uses_retrieved_passages(self):
         llm = FakeLLM("If you stop at the same time, yield to the car on your right [1].")
@@ -153,7 +186,38 @@ class ApiEndpointTests(RagTestCase):
         with mock.patch("apps.chat.services.rag.get_llm", return_value=llm):
             response = self.post({"message": "Who goes first at a four-way stop?"})
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json(), {"answer": "Yield to the driver on your right [1].", "grounded": True})
+        self.assertEqual(response.json(), {
+            "answer": "Yield to the driver on your right [1].",
+            "grounded": True,
+            "visualization": {"scene": "intersection", "scenario_id": "four_way_stop"},
+        })
+
+    def test_grounded_parking_question_returns_predefined_visualization(self):
+        from apps.chat.services.rag import ChatResult
+
+        with mock.patch(
+            "apps.api.views.answer_question",
+            return_value=ChatResult("Use the manual's parking steps [1].", grounded=True),
+        ):
+            response = self.post({"message": "How do I parallel park?"})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            response.json()["visualization"],
+            {"scene": "parking", "scenario_id": "parallel"},
+        )
+
+    def test_ungrounded_parking_question_does_not_trigger_a_visualization(self):
+        from apps.chat.services.rag import ChatResult
+
+        with mock.patch(
+            "apps.api.views.answer_question",
+            return_value=ChatResult(NO_ANSWER_MESSAGE, grounded=False),
+        ):
+            response = self.post({"message": "How do I parallel park?"})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIsNone(response.json()["visualization"])
 
     def test_chat_endpoint_validates_input(self):
         for data in ({}, {"message": "   "}, {"message": 5}, {"message": "x" * 1001}):

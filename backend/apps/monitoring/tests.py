@@ -30,7 +30,11 @@ class RequestMonitoringTests(TestCase):
                 mock.patch("apps.monitoring.metrics.perf_counter", side_effect=[1, 1.05, 2, 2.08]):
             for message in ("private question one", "private question two"):
                 response = self.post(message)
-                self.assertEqual(response.json(), {"answer": "Yield [1].", "grounded": True})
+                self.assertEqual(response.json(), {
+                    "answer": "Yield [1].",
+                    "grounded": True,
+                    "visualization": None,
+                })
         bucket = PerformanceBucket.objects.get()
         self.assertEqual((bucket.stage, bucket.outcome, bucket.samples), ("request", "success", 2))
         self.assertAlmostEqual(bucket.total_ms, 130)
