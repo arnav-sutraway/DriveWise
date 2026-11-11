@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Canvas, useFrame } from '@react-three/fiber';
 import { OrbitControls } from '@react-three/drei';
 import { getAnimationPhase, resolveRightOfWay } from '../logic/rightOfWay.js';
+import VehicleModel from './VehicleModel.jsx';
 
 const approaches = [
   { id: 'N-1', name: 'North', approachPosition: [0, 0, -4.8], position: [0, 0, -3.2], rotation: 0, color: '#3d8fd1', move: [0, 0, 1.1] },
@@ -9,6 +10,7 @@ const approaches = [
   { id: 'S-1', name: 'South', approachPosition: [0, 0, 4.8], position: [0, 0, 3.2], rotation: Math.PI, color: '#47a982', move: [0, 0, -1.1] },
   { id: 'W-1', name: 'West', approachPosition: [-4.8, 0, 0], position: [-3.2, 0, 0], rotation: -Math.PI / 2, color: '#9a72c7', move: [1.1, 0, 0] },
 ];
+const DEMO_DURATION = 8000;
 
 function Road() {
   return (
@@ -82,20 +84,8 @@ function Vehicle({ vehicle, phase, firstVehicle, elapsed }) {
     ref.current.position.z += (targetZ + vehicle.move[2] * 5.2 * proceedProgress - ref.current.position.z) * easing;
   });
   return (
-    <group ref={ref} position={vehicle.position} rotation={[0, vehicle.rotation, 0]}>
-      <mesh position={[0, 0.3, 0]} castShadow>
-        <boxGeometry args={[0.76, 0.42, 1.25]} />
-        <meshStandardMaterial color={vehicle.color} emissive={isHighlighted ? '#f5bc58' : '#000000'} emissiveIntensity={isHighlighted ? 0.65 : 0} roughness={0.45} />
-      </mesh>
-      <mesh position={[0, 0.58, 0.02]}>
-        <boxGeometry args={[0.57, 0.25, 0.54]} /><meshStandardMaterial color="#dcebf1" metalness={0.12} roughness={0.24} />
-      </mesh>
-      {isHighlighted && (
-        <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.035, 0]}>
-          <ringGeometry args={[0.58, 0.72, 32]} />
-          <meshBasicMaterial color="#f5bc58" transparent opacity={0.9} />
-        </mesh>
-      )}
+    <group ref={ref} position={vehicle.approachPosition} rotation={[0, vehicle.rotation, 0]}>
+      <VehicleModel color={vehicle.color} highlight={isHighlighted} />
     </group>
   );
 }
@@ -115,10 +105,11 @@ function Scene({ phase, firstVehicle, elapsed }) {
   );
 }
 
-export default function IntersectionScene({ scenarioId }) {
+export default function IntersectionScene({ scenarioId, autoPlayKey = 0 }) {
   const decision = resolveRightOfWay(scenarioId);
   const [elapsed, setElapsed] = useState(0);
   const [running, setRunning] = useState(false);
+  const lastAutoPlayKey = useRef(autoPlayKey);
   const phase = getAnimationPhase(scenarioId, elapsed);
   const phaseName = phase === 'approaching'
     ? 'Vehicles approaching'
@@ -132,29 +123,39 @@ export default function IntersectionScene({ scenarioId }) {
 
   useEffect(() => {
     if (!running) return undefined;
-    let tick = Math.floor(elapsed / 200);
-    const timer = window.setInterval(() => {
-      tick += 1;
-      setElapsed(Math.min(tick * 200, 8000));
-      if (tick * 200 >= 8000) {
-        window.clearInterval(timer);
+    const startedAt = performance.now() - elapsed;
+    let frameId;
+    const advance = (now) => {
+      const nextElapsed = Math.min(now - startedAt, DEMO_DURATION);
+      setElapsed(nextElapsed);
+      if (nextElapsed >= DEMO_DURATION) {
         setRunning(false);
+        return;
       }
-    }, 200);
-    return () => window.clearInterval(timer);
-  }, [running]);
+      frameId = window.requestAnimationFrame(advance);
+    };
+    frameId = window.requestAnimationFrame(advance);
+    return () => window.cancelAnimationFrame(frameId);
+  }, [running, scenarioId]);
 
   useEffect(() => {
     setElapsed(0);
     setRunning(false);
   }, [scenarioId]);
 
+  useEffect(() => {
+    if (lastAutoPlayKey.current === autoPlayKey) return;
+    lastAutoPlayKey.current = autoPlayKey;
+    setElapsed(0);
+    setRunning(true);
+  }, [autoPlayKey]);
+
   const togglePlayback = () => {
     if (running) {
       setRunning(false);
       return;
     }
-    if (elapsed >= 8000) setElapsed(0);
+    if (elapsed >= DEMO_DURATION) setElapsed(0);
     setRunning(true);
   };
 
@@ -179,7 +180,7 @@ export default function IntersectionScene({ scenarioId }) {
           <div className="status-line"><span className="status-dot" />{phaseName}</div>
           <p>{decision.explanation}</p>
         </div>
-        <button className="action-button" type="button" onClick={togglePlayback}>{running ? 'Pause demo' : elapsed >= 8000 ? 'Replay demo' : '▶  Play demo'}</button>
+        <button className="action-button" type="button" onClick={togglePlayback}>{running ? 'Pause demo' : elapsed >= DEMO_DURATION ? 'Replay demo' : '▶  Play demo'}</button>
       </div>
       <div className="vehicle-key" aria-label="Intersection approaches">
         {approaches.map((vehicle) => (

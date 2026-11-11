@@ -6,6 +6,7 @@ from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET, require_POST
 
 from apps.chat.services.rag import answer_question
+from apps.chat.services.visualizations import visualization_for_question
 from apps.knowledge.services.embedding_generation import ConfigurationError
 from apps.monitoring.metrics import monitor_chat, note_failure
 
@@ -48,4 +49,8 @@ def chat(request):
         return JsonResponse(
             {"detail": "The coach couldn't answer right now. Please try again."}, status=502)
 
-    return JsonResponse({"answer": result.answer, "grounded": result.grounded})
+    return JsonResponse({
+        "answer": result.answer,
+        "grounded": result.grounded,
+        "visualization": visualization_for_question(message, grounded=result.grounded),
+    })

@@ -1,9 +1,19 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { suggestedQuestions, suggestedPrompt } from '../data/drivingScenarios.js';
 import { askCoach } from '../services/chatApi.js';
 import { clearChatHistory, loadChatHistory, saveChatHistory } from '../services/chatHistory.js';
 
-export default function CoachChat({ onScenarioChange }) {
+function isKnownVisualization(visualization) {
+  if (visualization?.scene === 'intersection') {
+    return scenarios.some(({ id }) => id === visualization.scenario_id);
+  }
+  if (visualization?.scene === 'parking') {
+    return parkingScenarios.some(({ id }) => id === visualization.scenario_id);
+  }
+  return false;
+}
+
+export default function CoachChat({ onVisualization }) {
   const [selectedId, setSelectedId] = useState(null);
   const [question, setQuestion] = useState('');
   const [messages, setMessages] = useState(loadChatHistory);
@@ -29,16 +39,18 @@ export default function CoachChat({ onScenarioChange }) {
     setLoading(true);
     try {
       const response = await askCoach(prompt);
-      const scenarioId = response.visualization?.scenario_id;
-      if (scenarioId) {
-        setSelectedId(scenarioId);
-        onScenarioChange(scenarioId);
+      const visualization = isKnownVisualization(response.visualization)
+        ? response.visualization
+        : null;
+      if (visualization) {
+        setSelectedId(visualization.scenario_id);
+        onVisualization?.(visualization);
       }
       setMessages((current) => [...current, {
         role: 'assistant',
         content: response.answer,
         reminder: response.reminder,
-        scenarioId,
+        visualization,
       }]);
     } catch (error) {
       setMessages((current) => [...current, {
@@ -95,7 +107,9 @@ export default function CoachChat({ onScenarioChange }) {
                 <div className="message-author">
                   <span className="avatar avatar-small">DW</span>
                   DriveWise coach
-                  {message.scenarioId && <span className="verified-pill"><span />Practice rule</span>}
+                  {message.visualization && (
+                    <span className="verified-pill"><span />Demo opened</span>
+                  )}
                 </div>
                 <p>{message.content}</p>
                 {message.reminder && <div className="remember-box"><strong>Remember</strong><br />{message.reminder}</div>}

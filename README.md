@@ -54,15 +54,27 @@ Pipeline (`backend/apps/`):
 | Check the answer cites a retrieved passage | `chat/services/response_validation.py` |
 | Run the steps above | `chat/services/rag.py` |
 
-`POST /api/v1/chat/` with `{"message": "..."}` returns `{"answer": "...", "grounded": true}`. `grounded: false` means no relevant passage was found (or the model's answer didn't cite one) and `answer` is the "couldn't find that" message. Errors: 400 bad input, 503 missing API key, 502 provider failure.
+`POST /api/v1/chat/` with `{"message": "..."}` returns an answer and a predefined visualization intent:
+
+```json
+{
+  "answer": "The grounded answer, with manual citations.",
+  "grounded": true,
+  "visualization": { "scene": "parking", "scenario_id": "parallel" }
+}
+```
+
+`visualization` is `null` for ungrounded answers or questions that do not clearly name a supported demonstration. The server maps only to predefined scene IDs; the model cannot supply animation instructions or arbitrary IDs. A grounded four-way-stop question opens the intersection demo, while a grounded question about parallel, perpendicular, reverse-in, or angle parking opens that parking lesson. Errors: 400 bad input, 503 missing API key, 502 provider failure.
 
 ## Usage
 
 - Choose a suggested question or enter a driving-rule question and select **Ask coach**. Answers come only from the manuals in the knowledge base.
+- A grounded question about a supported driving scenario opens and plays its 3D demonstration. Questions without a grounded answer do not trigger a scene.
 - Use **Play demo** to watch the vehicles approach, stop, highlight the scripted first-to-stop vehicle, and proceed through the intersection.
-- Drag the 3D scene to orbit the view and scroll/pinch to zoom.
+- Select **Parking Simulator** to practice parallel, forward/perpendicular, reverse-in, or angle parking. Use the play/pause, restart, and step controls; select a step or technique to reset the walkthrough.
+- Drag either 3D scene to orbit the view and scroll/pinch to zoom.
 
-`GET /api/v1/health/` checks the backend. `POST /api/v1/chat/` answers questions (see above). The predefined frontend scenario and its 3D demonstration remain in place; chat responses do not control scenario selection or animation.
+`GET /api/v1/health/` checks the backend. `POST /api/v1/chat/` answers questions (see above). Parking guidance in the simulator cites the Georgia DDS 2024–2025 Parent/Teen Driving Guide, “Parking” (PDF pp. 21–22). In particular, the reverse-in example is identified as a practice variation: the guide's perpendicular-parking sequence describes a forward entry and does not prescribe that reverse-in maneuver. The on-screen guidance is educational and does not replace an instructor or the current Georgia Driver's Manual.
 
 Future scenario controls should be selected from the predefined frontend scenario set rather than supplied as arbitrary IDs or animation instructions.
 
