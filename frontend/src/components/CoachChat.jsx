@@ -1,7 +1,7 @@
 import { useState } from 'react';
-import { scenarios, suggestedQuestions, suggestedPrompt } from '../data/drivingScenarios.js';
-import { parkingScenarios } from '../data/parkingScenarios.js';
+import { suggestedQuestions, suggestedPrompt } from '../data/drivingScenarios.js';
 import { askCoach } from '../services/chatApi.js';
+import { clearChatHistory, loadChatHistory, saveChatHistory } from '../services/chatHistory.js';
 
 function isKnownVisualization(visualization) {
   if (visualization?.scene === 'intersection') {
@@ -16,8 +16,20 @@ function isKnownVisualization(visualization) {
 export default function CoachChat({ onVisualization }) {
   const [selectedId, setSelectedId] = useState(null);
   const [question, setQuestion] = useState('');
-  const [messages, setMessages] = useState([]);
+  const [messages, setMessages] = useState(loadChatHistory);
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    saveChatHistory(messages);
+  }, [messages]);
+
+  const startNewConversation = () => {
+    if (loading) return;
+    clearChatHistory();
+    setMessages([]);
+    setSelectedId(null);
+    setQuestion('');
+  };
 
   const sendQuestion = async (text) => {
     const prompt = text.trim();
@@ -64,6 +76,15 @@ export default function CoachChat({ onVisualization }) {
           <p>Django API <span className="separator">·</span> Driving practice</p>
         </div>
         <span className="verified-pill"><span />Practice mode</span>
+        <button
+          className="clear-chat-button"
+          type="button"
+          onClick={startNewConversation}
+          disabled={loading || messages.length === 0}
+          title="Clear this conversation and start fresh"
+        >
+          New conversation
+        </button>
       </div>
 
       <div className="conversation" aria-live="polite">
