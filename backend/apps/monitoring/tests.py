@@ -16,8 +16,8 @@ from apps.knowledge.services.embedding_generation import ConfigurationError, Has
 
 from .checks import check_thresholds
 from .metrics import failure_kind, save_observations
-from .models import PerformanceBucket
-from .reporting import performance_report
+from .models import PerformanceBucket, UsageLog
+from .reporting import performance_report, usage_report
 
 
 @override_settings(PERFORMANCE_LATENCY_WARNING_MS=0, PERFORMANCE_FAILURE_WARNING_PERCENT=0)
@@ -235,3 +235,32 @@ class DashboardTests(TestCase):
             response = self.client.get(self.url)
         self.assertContains(response, "Metrics unavailable", status_code=503)
         self.assertNotContains(response, "Within configured thresholds", status_code=503)
+
+
+class UsageLogTests(TestCase):
+    def test_valid_requests_are_logged_without_question_text(self):
+        with mock.patch("apps.api.views.answer_question", return_value=ChatResult("Yield [1].", True)):
+            self.client.post("/api/v1/chat/", {"message": "private question"}, content_type="application/json")
+        self.client.post("/api/v1/chat/", {"message": ""}, content_type="application/json")
+        log = UsageLog.objects.get()
+        self.assertEqual(log.outcome, "success")
+        self.assertNotIn("private question", str(list(UsageLog.objects.values())))
+
+    def test_report_counts_requests_in_window(self):
+        now = timezone.now()
+        for hours_ago, ms, outcome in [(0.5, 100, "success"), (0.5, 300, "timeout"), (2, 100, "success")]:
+            UsageLog.objects.create(created_at=now - timedelta(hours=hours_ago), response_ms=ms, outcome=outcome)
+        report = usage_report(1, now)
+        self.assertEqual((report["total_queries"], report["average"]), (2, "200 ms"))
+        self.assertEqual(usage_report(24, now)["total_queries"], 3)
+        self.assertIn("Timeout", [log["outcome"] for log in report["logs"]])
+
+    def test_only_staff_can_view_usage_page(self):
+        url = reverse("usage")
+        self.assertRedirects(self.client.get(url), "/admin/login/?next=/admin/usage/")
+        UsageLog.objects.create(created_at=timezone.now(), response_ms=1500, outcome="success")
+        self.client.force_login(get_user_model().objects.create_user(username="staff", is_staff=True))
+        response = self.client.get(url)
+        self.assertContains(response, "1.50 s")
+        self.assertIn("no-store", response["Cache-Control"])
+        self.assertContains(self.client.get(reverse("admin:index")), url)

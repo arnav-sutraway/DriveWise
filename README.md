@@ -124,9 +124,9 @@ Unset targets show baseline mode; missing samples show **No data**. Read failure
 the chat response; lost measurements are not retried/reconstructed. These metrics are not
 an external uptime monitor and cannot observe requests lost when the process exits.
 
-Only minute-level aggregates (stage, outcome, duration bucket, sample count, total and
-maximum duration) are persisted. No prompts, answers, individual request timestamps,
-identities, query history, or usage-reporting interface are added. Story 5 remains separate.
+The performance dashboard persists only minute-level aggregates (stage, outcome, duration
+bucket, sample count, total and maximum duration). Per-request usage logs are kept
+separately; see below. Neither stores prompts, answers, or user identities.
 Database-side counter increments support concurrent workers sharing the same database;
 SQLite is intended for local development. Keep metric storage and cleanup in the hosting
 plan when choosing a production database.
@@ -136,6 +136,15 @@ To remove aggregates older than seven days, run this locally as needed (schedule
 ```powershell
 .\.venv\Scripts\python.exe manage.py prune_performance_metrics --days 7
 ```
+
+## Usage logs (story 12)
+
+Sign in at `/admin/` as staff and select **View chatbot usage logs**, or visit `/admin/usage/`.
+It uses the same staff-only access as the performance dashboard and shows the number of
+queries, average response time, and the most recent requests (timestamp, response time,
+outcome) for the last hour or 24 hours. Each valid chat request is recorded by the same
+`monitor_chat` wrapper as the performance metrics. Question text, answers, and user
+identities are not stored.
 
 ## Verification
 

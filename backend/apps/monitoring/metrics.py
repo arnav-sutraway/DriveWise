@@ -15,7 +15,7 @@ from django.utils import timezone
 
 from apps.knowledge.services.embedding_generation import ConfigurationError
 
-from .models import PerformanceBucket
+from .models import PerformanceBucket, UsageLog
 
 logger = logging.getLogger(__name__)
 
@@ -138,5 +138,10 @@ def monitor_chat(view):
                 # Keep telemetry failure separate from the learner's response.
                 # Do not include exception payloads, prompts, or provider secrets.
                 logger.warning("Performance metrics could not be saved (%s).", type(error).__name__)
+            if outcome != "invalid":
+                try:
+                    UsageLog.objects.create(created_at=timezone.now(), response_ms=duration_ms, outcome=outcome)
+                except Exception as error:
+                    logger.warning("Usage log could not be saved (%s).", type(error).__name__)
 
     return wrapped
