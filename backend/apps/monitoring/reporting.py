@@ -5,11 +5,11 @@ from datetime import timedelta
 from math import ceil
 
 from django.conf import settings
-from django.db.models import Max, Sum
+from django.db.models import Avg, Count, Max, Sum
 from django.utils import timezone
 
 from .metrics import FAILURES, LATENCY_BOUNDS_MS, STAGES
-from .models import PerformanceBucket
+from .models import PerformanceBucket, UsageLog
 
 
 def format_ms(value):
@@ -83,4 +83,22 @@ def performance_report(minutes, now=None):
         "start": start, "updated_at": now,
         "latency_limit": format_ms(latency_limit) if latency_limit else "Not set — baseline mode",
         "failure_limit": f"{failure_limit:g}%" if failure_limit else "Not set — baseline mode",
+    }
+
+
+def usage_report(hours, now=None, limit=100):
+    """Query count, average response time, and the most recent individual requests."""
+    now = now or timezone.now()
+    start = now - timedelta(hours=hours)
+    logs = UsageLog.objects.filter(created_at__gt=start, created_at__lte=now)
+    totals = logs.aggregate(count=Count("id"), average=Avg("response_ms"))
+    return {
+        "total_queries": totals["count"],
+        "average": format_ms(totals["average"]) if totals["count"] else "—",
+        "logs": [
+            {"created_at": log.created_at, "response": format_ms(log.response_ms),
+             "outcome": FAILURES.get(log.outcome, "Success")}
+            for log in logs[:limit]
+        ],
+        "start": start, "updated_at": now,
     }

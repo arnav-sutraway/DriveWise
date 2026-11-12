@@ -3,6 +3,9 @@ import { CoachChat } from './index.js';
 import IntersectionScene from './IntersectionScene.jsx';
 import ParkingSimulator from './ParkingSimulator.jsx';
 
+// In development Vite (port 5173) and Django (port 8000) are separate servers; in production Django serves both.
+const ADMIN_URL = import.meta.env.DEV ? 'http://127.0.0.1:8000/admin/' : '/admin/';
+
 export default function LearningWorkspace() {
   const [experience, setExperience] = useState('lesson');
   const [scenarioId, setScenarioId] = useState('four_way_stop');
@@ -40,6 +43,7 @@ export default function LearningWorkspace() {
         <div className="topbar-right">
           <span className="practice-tag"><i />Practice mode</span>
           <a href="#quick-rules" onClick={() => setExperience('lesson')}>Quick rules <span>↗</span></a>
+          <a href={ADMIN_URL}>Admin <span>↗</span></a>
         </div>
       </header>
       <nav className="main-nav" aria-label="Main navigation">
