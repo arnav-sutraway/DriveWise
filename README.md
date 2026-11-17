@@ -28,22 +28,25 @@ python -m venv .venv
 pip install -r requirements.txt
 cp .env.example .env          # then paste your GEMINI_API_KEY into .env
 python manage.py migrate
-python manage.py ingest_documents --state Georgia --edition 2026   # loads data/manuals/
+python manage.py ingest_documents --state Georgia --edition 2026   # PDFs, .txt, and .md in data/manuals/
 python manage.py runserver
 ```
 
 ## RAG chatbot (backend)
 
 1. Get a free Gemini API key at https://aistudio.google.com/apikey and put it in `backend/.env` (never commit `.env`).
-2. Put the Georgia Driver's Manual PDF (from https://dds.georgia.gov) in `backend/data/manuals/`.
+2. Put local PDFs or UTF-8 `.txt`/`.md` files in `backend/data/manuals/`.
 3. Run `python manage.py ingest_documents --state Georgia --edition 2026`. Re-running replaces the same files. Changing the embedding model requires re-ingesting.
+4. To ingest a public web page, set its exact hostname in `KNOWLEDGE_ALLOWED_HOSTS` in `backend/.env` (for example `KNOWLEDGE_ALLOWED_HOSTS=dds.georgia.gov`), then run `python manage.py ingest_url https://dds.georgia.gov/... --state Georgia --edition 2026`. Only HTTPS pages from explicitly allowlisted hosts are fetched; redirects and non-public DNS addresses are rejected.
+
+The same parsers are available to future upload/API flows via `apps.knowledge.services.file_ingestion.parse_text_upload` / `ingest_text_upload` and `apps.knowledge.services.web_ingestion.fetch_web_page` / `ingest_web_url`. Both paths pass extracted text through shared Unicode, control-character, entity, and whitespace cleanup before chunking and embedding. Text uploads are UTF-8 `.txt` or `.md` files limited to 10 MiB. Web responses support HTML, plain text, and JSON and are limited to 5 MiB.
 
 Pipeline (`backend/apps/`):
 
 | Step | File |
 | --- | --- |
-| Read PDF, save chunks | `knowledge/services/document_ingestion.py` |
-| Split into chunks | `knowledge/services/preprocessing.py` |
+| Read PDF, local text, or allowlisted web pages | `knowledge/services/document_ingestion.py`, `file_ingestion.py`, `web_ingestion.py` |
+| Clean and split text into chunks | `knowledge/services/preprocessing.py` |
 | Embed (`RAG_EMBEDDER=gemini`, or `hashing` offline) | `knowledge/services/embedding_generation.py` |
 | Retrieve (cosine search, `RAG_TOP_K`, `RAG_MIN_SCORE`) | `knowledge/services/vector_retrieval.py` |
 | Build prompt | `chat/services/prompts.py` |
@@ -51,15 +54,27 @@ Pipeline (`backend/apps/`):
 | Check the answer cites a retrieved passage | `chat/services/response_validation.py` |
 | Run the steps above | `chat/services/rag.py` |
 
-`POST /api/v1/chat/` with `{"message": "..."}` returns `{"answer": "...", "grounded": true}`. `grounded: false` means no relevant passage was found (or the model's answer didn't cite one) and `answer` is the "couldn't find that" message. Errors: 400 bad input, 503 missing API key, 502 provider failure.
+`POST /api/v1/chat/` with `{"message": "..."}` returns an answer and a predefined visualization intent:
+
+```json
+{
+  "answer": "The grounded answer, with manual citations.",
+  "grounded": true,
+  "visualization": { "scene": "parking", "scenario_id": "parallel" }
+}
+```
+
+`visualization` is `null` for ungrounded answers or questions that do not clearly name a supported demonstration. The server maps only to predefined scene IDs; the model cannot supply animation instructions or arbitrary IDs. A grounded four-way-stop question opens the intersection demo, while a grounded question about parallel, perpendicular, reverse-in, or angle parking opens that parking lesson. Errors: 400 bad input, 503 missing API key, 502 provider failure.
 
 ## Usage
 
 - Choose a suggested question or enter a driving-rule question and select **Ask coach**. Answers come only from the manuals in the knowledge base.
+- A grounded question about a supported driving scenario opens and plays its 3D demonstration. Questions without a grounded answer do not trigger a scene.
 - Use **Play demo** to watch the vehicles approach, stop, highlight the scripted first-to-stop vehicle, and proceed through the intersection.
-- Drag the 3D scene to orbit the view and scroll/pinch to zoom.
+- Select **Parking Simulator** to practice parallel, forward/perpendicular, reverse-in, or angle parking. Use the play/pause, restart, and step controls; select a step or technique to reset the walkthrough.
+- Drag either 3D scene to orbit the view and scroll/pinch to zoom.
 
-`GET /api/v1/health/` checks the backend. `POST /api/v1/chat/` answers questions (see above). The predefined frontend scenario and its 3D demonstration remain in place; chat responses do not control scenario selection or animation.
+`GET /api/v1/health/` checks the backend. `POST /api/v1/chat/` answers questions (see above). Parking guidance in the simulator cites the Georgia DDS 2024–2025 Parent/Teen Driving Guide, “Parking” (PDF pp. 21–22). In particular, the reverse-in example is identified as a practice variation: the guide's perpendicular-parking sequence describes a forward entry and does not prescribe that reverse-in maneuver. The on-screen guidance is educational and does not replace an instructor or the current Georgia Driver's Manual.
 
 Future scenario controls should be selected from the predefined frontend scenario set rather than supplied as arbitrary IDs or animation instructions.
 
@@ -109,9 +124,9 @@ Unset targets show baseline mode; missing samples show **No data**. Read failure
 the chat response; lost measurements are not retried/reconstructed. These metrics are not
 an external uptime monitor and cannot observe requests lost when the process exits.
 
-Only minute-level aggregates (stage, outcome, duration bucket, sample count, total and
-maximum duration) are persisted. No prompts, answers, individual request timestamps,
-identities, query history, or usage-reporting interface are added. Story 5 remains separate.
+The performance dashboard persists only minute-level aggregates (stage, outcome, duration
+bucket, sample count, total and maximum duration). Per-request usage logs are kept
+separately; see below. Neither stores prompts, answers, or user identities.
 Database-side counter increments support concurrent workers sharing the same database;
 SQLite is intended for local development. Keep metric storage and cleanup in the hosting
 plan when choosing a production database.
@@ -121,6 +136,15 @@ To remove aggregates older than seven days, run this locally as needed (schedule
 ```powershell
 .\.venv\Scripts\python.exe manage.py prune_performance_metrics --days 7
 ```
+
+## Usage logs (story 12)
+
+Sign in at `/admin/` as staff and select **View chatbot usage logs**, or visit `/admin/usage/`.
+It uses the same staff-only access as the performance dashboard and shows the number of
+queries, average response time, and the most recent requests (timestamp, response time,
+outcome) for the last hour or 24 hours. Each valid chat request is recorded by the same
+`monitor_chat` wrapper as the performance metrics. Question text, answers, and user
+identities are not stored.
 
 ## Verification
 
@@ -133,6 +157,7 @@ npm run build
 The backend tests can be run from `backend/`:
 
 ```bash
+python -m pytest apps/knowledge/tests -q
 python manage.py test
 ```
 
@@ -155,6 +180,6 @@ backend/
   apps/api/     Versioned health and chat routes
   apps/frontend/ Serves the built SPA from Django
   apps/chat/    RAG pipeline, prompt, LLM inference, answer validation
-  apps/knowledge/ Documents/chunks, PDF ingestion, chunking, embeddings, retrieval
+  apps/knowledge/ Documents/chunks, PDF/text/web ingestion, preprocessing, embeddings, retrieval
   data/manuals/ Source PDFs for the knowledge base
 ```

@@ -1,0 +1,44 @@
+{% extends "admin/base_site.html" %}
+{% load static %}
+
+{% block extrastyle %}{{ block.super }}<link rel="stylesheet" href="{% static 'monitoring/performance.css' %}">{% endblock %}
+{% block breadcrumbs %}<div class="breadcrumbs"><a href="{% url 'admin:index' %}">Home</a> &rsaquo; Chatbot usage logs</div>{% endblock %}
+{% block nav-sidebar %}{% endblock %}
+
+{% block content %}
+<div class="performance">
+  <p class="intro">How often the driving coach is used and how quickly it responds.</p>
+  <form method="get" class="performance-toolbar">
+    <label for="window">Time window</label>
+    <select id="window" name="window">
+      <option value="1" {% if hours == 1 %}selected{% endif %}>Last hour</option>
+      <option value="24" {% if hours == 24 %}selected{% endif %}>Last 24 hours</option>
+    </select>
+    <button type="submit" class="button">Refresh</button>
+    <a href="{% url 'performance' %}" class="button">Performance dashboard →</a>
+  </form>
+
+  {% if unavailable %}
+    <div class="performance-banner warning" role="alert"><strong>Usage logs unavailable</strong><p>Usage data could not be read. Refresh to try again.</p></div>
+  {% else %}
+    <div class="performance-banner" role="status">
+      <strong>{{ total_queries }} queries</strong>
+      <span>Updated {{ updated_at|date:"H:i:s T" }} · Window begins {{ start|date:"M j H:i T" }}</span>
+    </div>
+    <div class="metric-grid">
+      <section class="metric-card"><h2>Number of queries</h2><p class="metric-value">{{ total_queries }}</p><p>Valid chat requests</p></section>
+      <section class="metric-card"><h2>Average response</h2><p class="metric-value">{{ average }}</p><p>Backend processing time</p></section>
+    </div>
+    <section class="performance-section">
+      <h2>Recent queries</h2>
+      {% if logs %}
+      <div class="table-scroll"><table>
+        <thead><tr><th scope="col">Timestamp</th><th scope="col">Response time</th><th scope="col">Outcome</th></tr></thead>
+        <tbody>{% for log in logs %}<tr><td>{{ log.created_at|date:"Y-m-d H:i:s T" }}</td><td>{{ log.response }}</td><td>{{ log.outcome }}</td></tr>{% endfor %}</tbody>
+      </table></div>
+      {% else %}<p class="empty-note">No chat queries in this window. Ask the coach a question, then refresh.</p>{% endif %}
+    </section>
+    <p class="performance-footnote">Shows up to the 100 most recent requests. Question text, answers, and user identities are not stored.</p>
+  {% endif %}
+</div>
+{% endblock %}

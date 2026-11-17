@@ -1,3 +1,4 @@
+from io import BytesIO
 from unittest import mock
 
 from django.conf import settings
@@ -6,10 +7,13 @@ from django.test import TestCase, override_settings
 
 from apps.chat.services.rag import NO_ANSWER_MESSAGE, answer_question
 from apps.chat.services.response_validation import CitationValidator
+from apps.chat.services.visualizations import visualization_for_question
 from apps.knowledge.models import Chunk, Document
 from apps.knowledge.services.document_ingestion import RawPage, ingest_pages
 from apps.knowledge.services.embedding_generation import HashingEmbedder
+from apps.knowledge.services.file_ingestion import ingest_text_upload
 from apps.knowledge.services.preprocessing import chunk_pages
+from apps.knowledge.services.web_ingestion import WebPage, ingest_web_url
 
 RIGHT_OF_WAY_PAGE = """At a four-way stop, the first vehicle to stop at the intersection goes first.
 When two vehicles stop at the same time, the driver on the left yields to the
@@ -53,6 +57,43 @@ class IngestionTests(RagTestCase):
         self.assertEqual(chunks[1].text.split()[0], "word160")
         self.assertEqual(chunks[0].page, 3)
 
+    def test_text_upload_is_cleaned_embedded_and_saved(self):
+        source = (
+            "The first vehicle\u0000 to stop goes first. "
+            "Yield to pedestrians before proceeding through the intersection."
+        )
+        document = ingest_text_upload(
+            BytesIO(source.encode("utf-8")),
+            "uploaded_manual.txt",
+            embedder=HashingEmbedder(),
+        )
+
+        chunk = document.chunks.get()
+        self.assertNotIn("\u0000", chunk.text)
+        self.assertNotIn("  ", chunk.text)
+        self.assertEqual(len(chunk.embedding), 512)
+
+    def test_web_page_is_embedded_and_saved(self):
+        page = WebPage(
+            url="https://manuals.example.org/rules",
+            title="Online Manual",
+            text="The first vehicle to stop goes first. Yield to pedestrians before proceeding through the intersection.",
+        )
+        with mock.patch(
+            "apps.knowledge.services.web_ingestion.fetch_web_page",
+            return_value=page,
+        ):
+            document = ingest_web_url(
+                page.url,
+                allowed_hosts=["manuals.example.org"],
+                embedder=HashingEmbedder(),
+            )
+
+        chunk = document.chunks.get()
+        self.assertEqual(document.title, "Online Manual")
+        self.assertEqual(document.source_path, page.url)
+        self.assertEqual(len(chunk.embedding), 512)
+
 
 class CitationValidatorTests(TestCase):
     def test_answer_with_valid_citation_is_grounded(self):
@@ -67,6 +108,38 @@ class CitationValidatorTests(TestCase):
     def test_no_citations_or_no_answer_token_is_not_grounded(self):
         self.assertFalse(CitationValidator().validate("Yield to the right.", 3).grounded)
         self.assertFalse(CitationValidator().validate("NO_ANSWER", 3).grounded)
+
+
+class VisualizationIntentTests(TestCase):
+    def test_selects_only_predefined_grounded_demonstrations(self):
+        self.assertEqual(
+            visualization_for_question("How do I parallel park?", grounded=True),
+            {"scene": "parking", "scenario_id": "parallel"},
+        )
+        self.assertEqual(
+            visualization_for_question("How do I reverse park?", grounded=True),
+            {"scene": "parking", "scenario_id": "reverse"},
+        )
+        self.assertEqual(
+            visualization_for_question("How do I angle park?", grounded=True),
+            {"scene": "parking", "scenario_id": "angle"},
+        )
+        self.assertEqual(
+            visualization_for_question("How do I park in a 90-degree space?", grounded=True),
+            {"scene": "parking", "scenario_id": "perpendicular"},
+        )
+        self.assertEqual(
+            visualization_for_question("How does a four-way stop work?", grounded=True),
+            {"scene": "intersection", "scenario_id": "four_way_stop"},
+        )
+
+    def test_does_not_select_a_demo_for_ungrounded_or_ambiguous_questions(self):
+        self.assertIsNone(
+            visualization_for_question("How do I parallel park?", grounded=False)
+        )
+        self.assertIsNone(
+            visualization_for_question("What does parking mean?", grounded=True)
+        )
 
 
 class RagPipelineTests(RagTestCase):
@@ -115,7 +188,38 @@ class ApiEndpointTests(RagTestCase):
         with mock.patch("apps.chat.services.rag.get_llm", return_value=llm):
             response = self.post({"message": "Who goes first at a four-way stop?"})
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json(), {"answer": "Yield to the driver on your right [1].", "grounded": True})
+        self.assertEqual(response.json(), {
+            "answer": "Yield to the driver on your right [1].",
+            "grounded": True,
+            "visualization": {"scene": "intersection", "scenario_id": "four_way_stop"},
+        })
+
+    def test_grounded_parking_question_returns_predefined_visualization(self):
+        from apps.chat.services.rag import ChatResult
+
+        with mock.patch(
+            "apps.api.views.answer_question",
+            return_value=ChatResult("Use the manual's parking steps [1].", grounded=True),
+        ):
+            response = self.post({"message": "How do I parallel park?"})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            response.json()["visualization"],
+            {"scene": "parking", "scenario_id": "parallel"},
+        )
+
+    def test_ungrounded_parking_question_does_not_trigger_a_visualization(self):
+        from apps.chat.services.rag import ChatResult
+
+        with mock.patch(
+            "apps.api.views.answer_question",
+            return_value=ChatResult(NO_ANSWER_MESSAGE, grounded=False),
+        ):
+            response = self.post({"message": "How do I parallel park?"})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIsNone(response.json()["visualization"])
 
     def test_chat_endpoint_validates_input(self):
         for data in ({}, {"message": "   "}, {"message": 5}, {"message": "x" * 1001}):

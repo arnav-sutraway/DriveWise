@@ -20,3 +20,14 @@ class PerformanceBucket(models.Model):
                 name="unique_performance_bucket",
             ),
         ]
+
+
+
+class UsageLog(models.Model):
+
+    created_at = models.DateTimeField(db_index=True)
+    response_ms = models.FloatField()
+    outcome = models.CharField(max_length=16)
+
+    class Meta:
+        ordering = ["-created_at"]

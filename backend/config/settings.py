@@ -110,6 +110,11 @@ RAG_TOP_K = int(os.environ.get("RAG_TOP_K", "5"))
 # the bot says it couldn't find the answer instead of guessing (US 3).
 RAG_MIN_SCORE = float(os.environ.get("RAG_MIN_SCORE", "0.55"))
 KNOWLEDGE_DATA_DIR = BASE_DIR / "data" / "manuals"
+KNOWLEDGE_ALLOWED_HOSTS = tuple(
+    host.strip()
+    for host in os.environ.get("KNOWLEDGE_ALLOWED_HOSTS", "").split(",")
+    if host.strip()
+)
 
 # Chat questions allowed per visitor per window; 0 disables the limit.
 CHAT_RATE_LIMIT = int(os.environ.get("CHAT_RATE_LIMIT", "10"))

@@ -5,7 +5,7 @@ from django.db import DatabaseError
 from django.template.response import TemplateResponse
 from django.views.decorators.http import require_GET
 
-from .reporting import performance_report
+from .reporting import performance_report, usage_report
 
 logger = logging.getLogger(__name__)
 
@@ -23,3 +23,18 @@ def performance(request):
         context["unavailable"] = True
         status = 503
     return TemplateResponse(request, "monitoring/performance.html", context, status=status)
+
+
+@require_GET
+def usage(request):
+    # The URL wraps this view in admin.site.admin_view (active staff + no caching).
+    hours = 24 if request.GET.get("window") == "24" else 1
+    context = {**admin.site.each_context(request), "title": "Chatbot usage logs", "hours": hours}
+    status = 200
+    try:
+        context.update(usage_report(hours))
+    except DatabaseError:
+        logger.warning("Usage logs could not be read.")
+        context["unavailable"] = True
+        status = 503
+    return TemplateResponse(request, "monitoring/usage.html", context, status=status)
