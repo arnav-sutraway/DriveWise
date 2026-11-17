@@ -57,8 +57,19 @@ class GeminiEmbedder:
         return self._embed([text], "RETRIEVAL_QUERY")[0]
 
 
+# Common words that would otherwise dominate keyword overlap (e.g. "what" and "the" made
+# "What is the capital of France?" score like a driving question).
+STOPWORDS = frozenset(
+    "about after again also and any are been before being both but can did does doing down each "
+    "few for from get had has have her here him his how into its just let may more most much must "
+    "new nor not now off one only onto other our out over own per put same say see shall she "
+    "should some such than that the them then there these they this those too two upon use very "
+    "was what when where which while who whom why will with would yes you your".split()
+)
+
+
 class HashingEmbedder:
-    """Offline bag-of-words embedder. No API key needed; used by tests and as a fallback."""
+    """Offline bag-of-words embedder. No API key needed; used by tests and the local-testing profile."""
 
     def __init__(self, dimensions: int = 512):
         self.dimensions = dimensions
@@ -66,11 +77,13 @@ class HashingEmbedder:
     def _vector(self, text: str) -> list[float]:
         vector = [0.0] * self.dimensions
         for token in re.findall(r"[a-z0-9]+", text.lower()):
-            if len(token) < 3:
+            if len(token) < 3 or token in STOPWORDS:
                 continue
             index = int(hashlib.md5(token.encode()).hexdigest(), 16) % self.dimensions
             vector[index] += 1.0
-        return _normalize(vector)
+        # Square-root term counts so a word repeated throughout a long statute
+        # ("way" in "right-of-way") can't outweigh the other words in the question.
+        return _normalize([math.sqrt(count) for count in vector])
 
     def embed_documents(self, texts: list[str]) -> list[list[float]]:
         return [self._vector(text) for text in texts]

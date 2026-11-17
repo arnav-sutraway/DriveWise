@@ -5,6 +5,7 @@ coverage/
 __pycache__/
 *.py[cod]
 .env
-backend/db.sqlite3
+.env.local
+backend/*.sqlite3
 backend/staticfiles/
 .DS_Store

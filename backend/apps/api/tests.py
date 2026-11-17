@@ -274,3 +274,65 @@ class RateLimitTests(TestCase):
     @override_settings(CHAT_RATE_LIMIT=0)
     def test_zero_disables_the_limit(self):
         self.assertEqual({self.post("1.1.1.1").status_code for _ in range(5)}, {400})
+
+
+class ClaudeCodeInferenceTests(TestCase):
+    """Local-testing provider that shells out to `claude -p` instead of calling Gemini."""
+
+    def make(self, **kwargs):
+        from apps.chat.services.inference import ClaudeCodeInference
+
+        with mock.patch("apps.chat.services.inference.shutil.which", return_value="/bin/claude"):
+            return ClaudeCodeInference(**kwargs)
+
+    @override_settings(RAG_LLM="claude_code", CLAUDE_CODE_BIN="claude", CLAUDE_CODE_MODEL="haiku",
+                       CLAUDE_CODE_TIMEOUT_SECONDS=30)
+    def test_get_llm_selects_claude_code(self):
+        from apps.chat.services.inference import ClaudeCodeInference, get_llm
+
+        with mock.patch("apps.chat.services.inference.shutil.which", return_value="/bin/claude"):
+            llm = get_llm()
+        self.assertIsInstance(llm, ClaudeCodeInference)
+        self.assertEqual((llm.model, llm.timeout_seconds), ("haiku", 30))
+
+    @override_settings(RAG_LLM="claude_code", CLAUDE_CODE_BIN="missing-claude")
+    def test_missing_cli_is_a_configuration_error(self):
+        from apps.chat.services.inference import get_llm
+        from apps.knowledge.services.embedding_generation import ConfigurationError
+
+        with mock.patch("apps.chat.services.inference.shutil.which", return_value=None):
+            with self.assertRaises(ConfigurationError):
+                get_llm()
+
+    def test_runs_headless_with_tools_disabled_and_prompt_on_stdin(self):
+        llm = self.make(model="haiku", timeout_seconds=30)
+        completed = mock.Mock(returncode=0, stdout="  Stop first [1].\n", stderr="")
+        with mock.patch("apps.chat.services.inference.subprocess.run", return_value=completed) as run:
+            answer = llm.generate("SYSTEM RULES", "Manual passages: ...")
+        self.assertEqual(answer, "Stop first [1].")
+        command = run.call_args.args[0]
+        self.assertEqual(command[:2], ["/bin/claude", "-p"])
+        self.assertEqual(command[command.index("--tools") + 1], "")
+        for flag in ("--safe-mode", "--strict-mcp-config", "--no-session-persistence"):
+            self.assertIn(flag, command)
+        system_prompt = command[command.index("--system-prompt") + 1]
+        self.assertTrue(system_prompt.startswith("SYSTEM RULES"))
+        self.assertIn("Do not use Markdown", system_prompt)
+        self.assertEqual(command[command.index("--model") + 1], "haiku")
+        self.assertNotIn("Manual passages: ...", command)
+        self.assertEqual(run.call_args.kwargs["input"], "Manual passages: ...")
+        self.assertEqual(run.call_args.kwargs["timeout"], 30)
+
+    def test_blank_model_uses_cli_default(self):
+        llm = self.make(model="")
+        completed = mock.Mock(returncode=0, stdout="ok [1]", stderr="")
+        with mock.patch("apps.chat.services.inference.subprocess.run", return_value=completed) as run:
+            llm.generate("s", "u")
+        self.assertNotIn("--model", run.call_args.args[0])
+
+    def test_cli_failure_raises(self):
+        llm = self.make()
+        completed = mock.Mock(returncode=1, stdout="", stderr="Not logged in")
+        with mock.patch("apps.chat.services.inference.subprocess.run", return_value=completed):
+            with self.assertRaisesRegex(RuntimeError, "Not logged in"):
+                llm.generate("s", "u")
