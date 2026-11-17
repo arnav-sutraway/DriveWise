@@ -19,6 +19,13 @@ ALLOWED_HOSTS = [
     for host in os.environ.get("DJANGO_ALLOWED_HOSTS", "127.0.0.1,localhost").split(",")
     if host.strip()
 ]
+# Full origins (with https://) allowed to submit forms, e.g. the admin login when
+# served over HTTPS on PythonAnywhere: "https://<username>.pythonanywhere.com".
+CSRF_TRUSTED_ORIGINS = [
+    origin.strip()
+    for origin in os.environ.get("DJANGO_CSRF_TRUSTED_ORIGINS", "").split(",")
+    if origin.strip()
+]
 
 INSTALLED_APPS = [
     "django.contrib.admin",
@@ -103,6 +110,10 @@ RAG_TOP_K = int(os.environ.get("RAG_TOP_K", "5"))
 # the bot says it couldn't find the answer instead of guessing (US 3).
 RAG_MIN_SCORE = float(os.environ.get("RAG_MIN_SCORE", "0.55"))
 KNOWLEDGE_DATA_DIR = BASE_DIR / "data" / "manuals"
+
+# Chat questions allowed per visitor per window; 0 disables the limit.
+CHAT_RATE_LIMIT = int(os.environ.get("CHAT_RATE_LIMIT", "10"))
+CHAT_RATE_LIMIT_WINDOW_SECONDS = int(os.environ.get("CHAT_RATE_LIMIT_WINDOW_SECONDS", "60"))
 
 # Zero disables a warning threshold while collecting a performance baseline.
 PERFORMANCE_LATENCY_WARNING_MS = float(os.environ.get("PERFORMANCE_LATENCY_WARNING_MS", "0"))

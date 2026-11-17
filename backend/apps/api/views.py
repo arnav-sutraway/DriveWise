@@ -9,6 +9,8 @@ from apps.chat.services.rag import answer_question
 from apps.knowledge.services.embedding_generation import ConfigurationError
 from apps.monitoring.metrics import monitor_chat, note_failure
 
+from .ratelimit import rate_limit
+
 logger = logging.getLogger(__name__)
 
 MAX_QUESTION_LENGTH = 1000
@@ -20,6 +22,7 @@ def health(request):
 
 
 @csrf_exempt
+@rate_limit
 @monitor_chat
 @require_POST
 def chat(request):

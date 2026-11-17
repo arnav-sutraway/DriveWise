@@ -20,7 +20,7 @@ from .models import PerformanceBucket
 from .reporting import performance_report
 
 
-@override_settings(PERFORMANCE_LATENCY_WARNING_MS=0, PERFORMANCE_FAILURE_WARNING_PERCENT=0)
+@override_settings(PERFORMANCE_LATENCY_WARNING_MS=0, PERFORMANCE_FAILURE_WARNING_PERCENT=0, CHAT_RATE_LIMIT=0)
 class RequestMonitoringTests(TestCase):
     def post(self, message="Who goes first?"):
         return self.client.post("/api/v1/chat/", {"message": message}, content_type="application/json")
@@ -93,7 +93,7 @@ class RequestMonitoringTests(TestCase):
         self.assertFalse(PerformanceBucket.objects.exists())
 
 
-@override_settings(RAG_EMBEDDER="hashing", RAG_MIN_SCORE=0.01)
+@override_settings(RAG_EMBEDDER="hashing", RAG_MIN_SCORE=0.01, CHAT_RATE_LIMIT=0)
 class StageTimingTests(TestCase):
     def setUp(self):
         ingest_pages([RawPage("At a four way stop the first vehicle to stop goes first. Yield to pedestrians before proceeding through the intersection.", 1)],

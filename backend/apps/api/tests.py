@@ -1,6 +1,7 @@
 from unittest import mock
 
 from django.conf import settings
+from django.core.cache import cache
 from django.test import TestCase, override_settings
 
 from apps.chat.services.rag import NO_ANSWER_MESSAGE, answer_question
@@ -96,6 +97,7 @@ class RagPipelineTests(RagTestCase):
         self.assertEqual(llm.prompts, [])
 
 
+@override_settings(CHAT_RATE_LIMIT=0)
 class ApiEndpointTests(RagTestCase):
     def post(self, data):
         return self.client.post("/api/v1/chat/", data=data, content_type="application/json")
@@ -145,3 +147,26 @@ class ApiEndpointTests(RagTestCase):
             response = self.post({"message": "Who goes first?"})
         self.assertEqual(response.status_code, 200)
         self.assertFalse(response.json()["grounded"])
+
+
+@override_settings(CHAT_RATE_LIMIT=2, CHAT_RATE_LIMIT_WINDOW_SECONDS=60)
+class RateLimitTests(TestCase):
+    def setUp(self):
+        cache.clear()
+
+    def post(self, ip):
+        return self.client.post("/api/v1/chat/", data={}, content_type="application/json",
+                                HTTP_X_FORWARDED_FOR=f"{ip}, 10.0.0.1")
+
+    def test_requests_over_the_limit_get_429(self):
+        self.assertEqual([self.post("1.1.1.1").status_code for _ in range(3)], [400, 400, 429])
+        self.assertEqual(self.post("1.1.1.1")["Retry-After"], "60")
+
+    def test_limit_is_per_visitor(self):
+        for _ in range(3):
+            self.post("1.1.1.1")
+        self.assertEqual(self.post("2.2.2.2").status_code, 400)
+
+    @override_settings(CHAT_RATE_LIMIT=0)
+    def test_zero_disables_the_limit(self):
+        self.assertEqual({self.post("1.1.1.1").status_code for _ in range(5)}, {400})

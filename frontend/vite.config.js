@@ -3,7 +3,8 @@ import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
 
 export default defineConfig({
-  base: '/static/frontend/',
+  // Django serves the build under /static/frontend/; Vercel (which sets VERCEL=1) serves it at the root.
+  base: process.env.VERCEL ? '/' : '/static/frontend/',
   plugins: [react(), tailwindcss()],
   server: {
     host: true,
