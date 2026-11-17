@@ -1,10 +1,11 @@
 """The RAG pipeline: question -> retrieve -> prompt -> generate -> validate."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from django.conf import settings
 
 from apps.knowledge.services.embedding_generation import get_embedder
+from apps.knowledge.services.sources import describe_sources
 from apps.knowledge.services.vector_retrieval import DatabaseVectorRetriever
 from apps.monitoring.metrics import time_stage
 
@@ -23,6 +24,8 @@ NO_ANSWER_MESSAGE = (
 class ChatResult:
     answer: str
     grounded: bool
+    # The passages the answer cites: [{"number", "title", "page", "url", "official_url"}].
+    sources: list[dict] = field(default_factory=list)
 
 
 def answer_question(question: str, embedder=None, llm=None, retriever=None) -> ChatResult:
@@ -44,4 +47,5 @@ def answer_question(question: str, embedder=None, llm=None, retriever=None) -> C
     validation = CitationValidator().validate(raw_answer, len(retrieved))
     if not validation.grounded:
         return ChatResult(NO_ANSWER_MESSAGE, grounded=False)
-    return ChatResult(validation.answer, grounded=True)
+    return ChatResult(validation.answer, grounded=True,
+                      sources=describe_sources(retrieved, validation.cited))

@@ -75,11 +75,22 @@ Pipeline (`backend/apps/`):
 
 ```json
 {
-  "answer": "The grounded answer, with manual citations.",
+  "answer": "The grounded answer, with manual citations [2].",
   "grounded": true,
+  "sources": [
+    {
+      "number": 2,
+      "title": "Final GA Drivers Manual artwork 2023 2024 revised June 2023",
+      "page": 43,
+      "url": "/api/v1/documents/13/file/#page=43",
+      "official_url": null
+    }
+  ],
   "visualization": { "scene": "parking", "scenario_id": "parallel" }
 }
 ```
+
+`sources` lists only the passages the answer cites (empty for ungrounded answers). `url` opens the exact copy the coach read: `GET /api/v1/documents/<id>/file/` serves the ingested file inline (only supported files inside `data/manuals/`), and `#page=N` opens PDFs at the cited page. `official_url` is the public original, taken from `backend/data/manuals/source_links.json` (file name → https URL; read per request, so editing it needs no re-ingest) or from the page URL for `ingest_url` documents. The chat shows each `[n]` as a link and lists the sources under the answer.
 
 `visualization` is `null` for ungrounded answers or questions that do not clearly name a supported demonstration. The server maps only to predefined scene IDs; the model cannot supply animation instructions or arbitrary IDs. A grounded four-way-stop question opens the intersection demo, while a grounded question about parallel, perpendicular, reverse-in, or angle parking opens that parking lesson. Errors: 400 bad input, 503 missing API key, 502 provider failure.
 
