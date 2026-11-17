@@ -1,13 +1,16 @@
 import json
 import logging
 
-from django.http import JsonResponse
+from django.http import FileResponse, Http404, JsonResponse
+from django.shortcuts import get_object_or_404
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET, require_POST
 
 from apps.chat.services.rag import answer_question
 from apps.chat.services.visualizations import visualization_for_question
+from apps.knowledge.models import Document
 from apps.knowledge.services.embedding_generation import ConfigurationError
+from apps.knowledge.services.sources import LOCAL_CONTENT_TYPES, local_file
 from apps.monitoring.metrics import monitor_chat, note_failure
 
 from .ratelimit import rate_limit
@@ -55,5 +58,18 @@ def chat(request):
     return JsonResponse({
         "answer": result.answer,
         "grounded": result.grounded,
+        "sources": result.sources,
         "visualization": visualization_for_question(message, grounded=result.grounded),
     })
+
+
+@require_GET
+def document_file(request, document_id):
+    """Serve the ingested copy of a knowledge-base document so citations can link to it."""
+    document = get_object_or_404(Document, pk=document_id)
+    path = local_file(document)
+    if path is None:
+        raise Http404("This document has no local copy.")
+    # Inline (not a download) so PDF viewers honour #page=N.
+    return FileResponse(path.open("rb"), filename=path.name,
+                        content_type=LOCAL_CONTENT_TYPES[path.suffix.lower()])

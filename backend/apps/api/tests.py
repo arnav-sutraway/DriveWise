@@ -191,6 +191,9 @@ class ApiEndpointTests(RagTestCase):
         self.assertEqual(response.json(), {
             "answer": "Yield to the driver on your right [1].",
             "grounded": True,
+            # The test document's source_path is not a real file and has no official link.
+            "sources": [{"number": 1, "title": "Georgia Driver's Manual", "page": 34,
+                         "url": None, "official_url": None}],
             "visualization": {"scene": "intersection", "scenario_id": "four_way_stop"},
         })
 
@@ -274,3 +277,146 @@ class RateLimitTests(TestCase):
     @override_settings(CHAT_RATE_LIMIT=0)
     def test_zero_disables_the_limit(self):
         self.assertEqual({self.post("1.1.1.1").status_code for _ in range(5)}, {400})
+
+
+class ClaudeCodeInferenceTests(TestCase):
+    """Local-testing provider that shells out to `claude -p` instead of calling Gemini."""
+
+    def make(self, **kwargs):
+        from apps.chat.services.inference import ClaudeCodeInference
+
+        with mock.patch("apps.chat.services.inference.shutil.which", return_value="/bin/claude"):
+            return ClaudeCodeInference(**kwargs)
+
+    @override_settings(RAG_LLM="claude_code", CLAUDE_CODE_BIN="claude", CLAUDE_CODE_MODEL="haiku",
+                       CLAUDE_CODE_TIMEOUT_SECONDS=30)
+    def test_get_llm_selects_claude_code(self):
+        from apps.chat.services.inference import ClaudeCodeInference, get_llm
+
+        with mock.patch("apps.chat.services.inference.shutil.which", return_value="/bin/claude"):
+            llm = get_llm()
+        self.assertIsInstance(llm, ClaudeCodeInference)
+        self.assertEqual((llm.model, llm.timeout_seconds), ("haiku", 30))
+
+    @override_settings(RAG_LLM="claude_code", CLAUDE_CODE_BIN="missing-claude")
+    def test_missing_cli_is_a_configuration_error(self):
+        from apps.chat.services.inference import get_llm
+        from apps.knowledge.services.embedding_generation import ConfigurationError
+
+        with mock.patch("apps.chat.services.inference.shutil.which", return_value=None):
+            with self.assertRaises(ConfigurationError):
+                get_llm()
+
+    def test_runs_headless_with_tools_disabled_and_prompt_on_stdin(self):
+        llm = self.make(model="haiku", timeout_seconds=30)
+        completed = mock.Mock(returncode=0, stdout="  Stop first [1].\n", stderr="")
+        with mock.patch("apps.chat.services.inference.subprocess.run", return_value=completed) as run:
+            answer = llm.generate("SYSTEM RULES", "Manual passages: ...")
+        self.assertEqual(answer, "Stop first [1].")
+        command = run.call_args.args[0]
+        self.assertEqual(command[:2], ["/bin/claude", "-p"])
+        self.assertEqual(command[command.index("--tools") + 1], "")
+        for flag in ("--safe-mode", "--strict-mcp-config", "--no-session-persistence"):
+            self.assertIn(flag, command)
+        system_prompt = command[command.index("--system-prompt") + 1]
+        self.assertTrue(system_prompt.startswith("SYSTEM RULES"))
+        self.assertIn("Do not use Markdown", system_prompt)
+        self.assertEqual(command[command.index("--model") + 1], "haiku")
+        self.assertNotIn("Manual passages: ...", command)
+        self.assertEqual(run.call_args.kwargs["input"], "Manual passages: ...")
+        self.assertEqual(run.call_args.kwargs["timeout"], 30)
+
+    def test_blank_model_uses_cli_default(self):
+        llm = self.make(model="")
+        completed = mock.Mock(returncode=0, stdout="ok [1]", stderr="")
+        with mock.patch("apps.chat.services.inference.subprocess.run", return_value=completed) as run:
+            llm.generate("s", "u")
+        self.assertNotIn("--model", run.call_args.args[0])
+
+    def test_cli_failure_raises(self):
+        llm = self.make()
+        completed = mock.Mock(returncode=1, stdout="", stderr="Not logged in")
+        with mock.patch("apps.chat.services.inference.subprocess.run", return_value=completed):
+            with self.assertRaisesRegex(RuntimeError, "Not logged in"):
+                llm.generate("s", "u")
+
+
+class SourceLinkTests(TestCase):
+    """Cited passages link to the served local copy and, when known, the official original."""
+
+    def setUp(self):
+        import json
+        import tempfile
+        from pathlib import Path
+
+        self.data_dir = Path(tempfile.mkdtemp())
+        self.outside_dir = Path(tempfile.mkdtemp())
+        (self.data_dir / "manual.pdf").write_bytes(b"%PDF-1.4 test manual")
+        (self.data_dir / "rules.md").write_text("# Scooter rules\nNever ride on sidewalks.", encoding="utf-8")
+        (self.data_dir / "notes.json").write_text("{}", encoding="utf-8")
+        (self.outside_dir / "secret.md").write_text("not part of the knowledge base", encoding="utf-8")
+        (self.data_dir / "source_links.json").write_text(json.dumps({
+            "rules.md": "https://example.gov/scooter-rules",
+            "manual.pdf": "javascript:alert(1)",  # Only https links are trusted.
+        }), encoding="utf-8")
+        self.settings_override = override_settings(KNOWLEDGE_DATA_DIR=self.data_dir)
+        self.settings_override.enable()
+
+    def tearDown(self):
+        import shutil
+
+        self.settings_override.disable()
+        shutil.rmtree(self.data_dir, ignore_errors=True)
+        shutil.rmtree(self.outside_dir, ignore_errors=True)
+
+    def passage(self, source_path, title, page=None):
+        from apps.knowledge.services.vector_retrieval import RetrievedChunk
+
+        document = Document.objects.create(title=title, source_path=str(source_path))
+        chunk = Chunk.objects.create(document=document, position=0, page=page, text="x", embedding=[1.0])
+        return RetrievedChunk(chunk, 0.9)
+
+    def test_cited_passages_get_local_and_official_links(self):
+        from apps.knowledge.services.sources import describe_sources
+
+        manual = self.passage(self.data_dir / "manual.pdf", "Driver's Manual", page=7)
+        rules = self.passage(self.data_dir / "rules.md", "Scooter Rules")
+        web = self.passage("https://dds.georgia.gov/page", "DDS Page")
+        uncited = self.passage(self.data_dir / "rules.md", "Not cited")
+
+        sources = describe_sources([manual, rules, web, uncited], cited=[3, 1, 2, 9, 1])
+
+        self.assertEqual([source["number"] for source in sources], [1, 2, 3])
+        self.assertEqual(sources[0], {
+            "number": 1, "title": "Driver's Manual", "page": 7,
+            "url": f"/api/v1/documents/{manual.chunk.document.pk}/file/#page=7", "official_url": None,
+        })
+        self.assertEqual(sources[1]["url"], f"/api/v1/documents/{rules.chunk.document.pk}/file/")
+        self.assertEqual(sources[1]["official_url"], "https://example.gov/scooter-rules")
+        self.assertEqual((sources[2]["url"], sources[2]["official_url"]),
+                         ("https://dds.georgia.gov/page", "https://dds.georgia.gov/page"))
+
+    def test_document_file_serves_local_copy_inline(self):
+        pdf = self.passage(self.data_dir / "manual.pdf", "Driver's Manual").chunk.document
+        rules = self.passage(self.data_dir / "rules.md", "Scooter Rules").chunk.document
+
+        response = self.client.get(f"/api/v1/documents/{pdf.pk}/file/")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response["Content-Type"], "application/pdf")
+        self.assertTrue(response["Content-Disposition"].startswith("inline"))
+        self.assertEqual(b"".join(response.streaming_content), b"%PDF-1.4 test manual")
+
+        response = self.client.get(f"/api/v1/documents/{rules.pk}/file/")
+        self.assertEqual(response["Content-Type"], "text/plain; charset=utf-8")
+        self.assertIn("Never ride on sidewalks.", b"".join(response.streaming_content).decode())
+
+    def test_document_file_refuses_anything_outside_the_knowledge_folder(self):
+        outside = self.passage(self.outside_dir / "secret.md", "Outside").chunk.document
+        unsupported = self.passage(self.data_dir / "notes.json", "Unsupported").chunk.document
+        missing = self.passage(self.data_dir / "deleted.pdf", "Deleted").chunk.document
+        web = self.passage("https://dds.georgia.gov/page", "Web").chunk.document
+
+        for document in (outside, unsupported, missing, web):
+            self.assertEqual(self.client.get(f"/api/v1/documents/{document.pk}/file/").status_code, 404)
+        self.assertEqual(self.client.get("/api/v1/documents/999999/file/").status_code, 404)
+        self.assertEqual(self.client.post(f"/api/v1/documents/{outside.pk}/file/").status_code, 405)

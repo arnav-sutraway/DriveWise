@@ -1155,3 +1155,64 @@ a:focus-visible, button:focus-visible, textarea:focus-visible {
     flex: 1;
   }
 }
+
+/* Citation links and the per-answer source list */
+.citation-link {
+  color: var(--navy);
+  font-weight: 700;
+  text-decoration: none;
+  border-radius: 3px;
+}
+
+.citation-link:hover,
+.citation-link:focus-visible {
+  text-decoration: underline;
+}
+
+.source-list {
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+}
+
+.source-list-label {
+  display: block;
+  margin-bottom: 4px;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.source-list ol {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.source-list li {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 6px;
+  align-items: baseline;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.source-number {
+  font-weight: 700;
+}
+
+.source-list a {
+  color: var(--navy);
+  overflow-wrap: anywhere;
+}
+
+.source-list a.source-official {
+  color: var(--muted);
+  font-size: 11px;
+}

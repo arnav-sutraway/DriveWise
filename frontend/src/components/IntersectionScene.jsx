@@ -4,11 +4,33 @@ import { OrbitControls } from '@react-three/drei';
 import { getAnimationPhase, resolveRightOfWay } from '../logic/rightOfWay.js';
 import VehicleModel from './VehicleModel.jsx';
 
+// Roads are 3.5 wide with one lane each way; vehicles keep to the right-hand lane (US traffic).
+// The vehicle model faces +z, so a rotation of θ points it along (sin θ, 0, cos θ).
+const ROAD_WIDTH = 3.5;
+const LANE_OFFSET = ROAD_WIDTH / 4;
+const STOP_LINE = 2.65;
+const STOP_POSITION = 3.35; // Keeps the 1.25-long vehicle's front bumper just behind the stop line.
 const approaches = [
-  { id: 'N-1', name: 'North', approachPosition: [0, 0, -4.8], position: [0, 0, -3.2], rotation: 0, color: '#3d8fd1', move: [0, 0, 1.1] },
-  { id: 'E-1', name: 'East', approachPosition: [4.8, 0, 0], position: [3.2, 0, 0], rotation: Math.PI / 2, color: '#e9a23b', move: [-1.1, 0, 0] },
-  { id: 'S-1', name: 'South', approachPosition: [0, 0, 4.8], position: [0, 0, 3.2], rotation: Math.PI, color: '#47a982', move: [0, 0, -1.1] },
-  { id: 'W-1', name: 'West', approachPosition: [-4.8, 0, 0], position: [-3.2, 0, 0], rotation: -Math.PI / 2, color: '#9a72c7', move: [1.1, 0, 0] },
+  { id: 'N-1', name: 'North', approachPosition: [-LANE_OFFSET, 0, -4.8], position: [-LANE_OFFSET, 0, -STOP_POSITION], rotation: 0, color: '#3d8fd1', move: [0, 0, 1.1] },
+  { id: 'E-1', name: 'East', approachPosition: [4.8, 0, -LANE_OFFSET], position: [STOP_POSITION, 0, -LANE_OFFSET], rotation: -Math.PI / 2, color: '#e9a23b', move: [-1.1, 0, 0] },
+  { id: 'S-1', name: 'South', approachPosition: [LANE_OFFSET, 0, 4.8], position: [LANE_OFFSET, 0, STOP_POSITION], rotation: Math.PI, color: '#47a982', move: [0, 0, -1.1] },
+  { id: 'W-1', name: 'West', approachPosition: [-4.8, 0, LANE_OFFSET], position: [-STOP_POSITION, 0, LANE_OFFSET], rotation: Math.PI / 2, color: '#9a72c7', move: [1.1, 0, 0] },
+];
+// Stop lines span only each approach lane: [x, z, width, depth].
+const stopLines = [
+  [-STOP_LINE, LANE_OFFSET, 0.08, 1.6],
+  [STOP_LINE, -LANE_OFFSET, 0.08, 1.6],
+  [-LANE_OFFSET, -STOP_LINE, 1.6, 0.08],
+  [LANE_OFFSET, STOP_LINE, 1.6, 0.08],
+];
+// Center lines on each leg outside the intersection box: [x, z, width, depth].
+const CENTER_LINE_LENGTH = 7.5 - ROAD_WIDTH / 2;
+const CENTER_LINE_MID = ROAD_WIDTH / 2 + CENTER_LINE_LENGTH / 2;
+const centerLines = [
+  [0, -CENTER_LINE_MID, 0.07, CENTER_LINE_LENGTH],
+  [0, CENTER_LINE_MID, 0.07, CENTER_LINE_LENGTH],
+  [-CENTER_LINE_MID, 0, CENTER_LINE_LENGTH, 0.07],
+  [CENTER_LINE_MID, 0, CENTER_LINE_LENGTH, 0.07],
 ];
 const DEMO_DURATION = 8000;
 
@@ -39,12 +61,16 @@ function Road() {
           <planeGeometry args={[0.7, 0.08]} /><meshStandardMaterial color="#f4f7fa" />
         </mesh>
       )))}
-      {[[-2.65, 0, 0.08, 1.8], [2.65, 0, 0.08, 1.8], [0, -2.65, 1.8, 0.08], [0, 2.65, 1.8, 0.08]].map(([x, z, w, h]) => (
-        <mesh key={`${x}-${z}`} rotation={[-Math.PI / 2, 0, 0]} position={[x, 0.025, z]}>
+      {stopLines.map(([x, z, w, h]) => (
+        <mesh key={`stop-${x}-${z}`} rotation={[-Math.PI / 2, 0, 0]} position={[x, 0.025, z]}>
           <planeGeometry args={[w, h]} /><meshStandardMaterial color="#f8fafc" />
         </mesh>
       ))}
-      <mesh position={[0, 0.17, 0]}><boxGeometry args={[1.3, 0.28, 1.3]} /><meshStandardMaterial color="#dce8f0" /></mesh>
+      {centerLines.map(([x, z, w, h]) => (
+        <mesh key={`center-${x}-${z}`} rotation={[-Math.PI / 2, 0, 0]} position={[x, 0.02, z]}>
+          <planeGeometry args={[w, h]} /><meshStandardMaterial color="#e3b448" />
+        </mesh>
+      ))}
       {[
         [-4.7, -4.5, '#d7c6a1'], [4.6, -4.4, '#a7c7b2'], [-4.6, 4.5, '#c2d0e3'], [4.8, 4.6, '#e3c9b9'],
       ].map(([x, z, color]) => (
@@ -68,9 +94,12 @@ function Road() {
 
 function Vehicle({ vehicle, phase, firstVehicle, elapsed }) {
   const ref = useRef(null);
+  const lastElapsed = useRef(elapsed);
   const isHighlighted = vehicle.id === firstVehicle && (phase === 'right-of-way' || phase === 'proceeding' || phase === 'complete');
-  useFrame((state) => {
+  useFrame((_, delta) => {
     if (!ref.current) return;
+    const rewound = elapsed < lastElapsed.current;
+    lastElapsed.current = elapsed;
     const approachDuration = vehicle.id === firstVehicle ? 1000 : 1600;
     const approachProgress = Math.min(elapsed / approachDuration, 1);
     const targetX = vehicle.approachPosition[0]
@@ -79,7 +108,9 @@ function Vehicle({ vehicle, phase, firstVehicle, elapsed }) {
       + (vehicle.position[2] - vehicle.approachPosition[2]) * approachProgress;
     const shouldMove = (phase === 'proceeding' || phase === 'complete') && vehicle.id === firstVehicle;
     const proceedProgress = shouldMove ? Math.min((elapsed - 3800) / 3400, 1) : 0;
-    const easing = 1 - Math.exp(-state.clock.getDelta() * 2.4);
+    // Use R3F's per-frame delta; calling clock.getDelta() here returns ~0 because R3F already consumed it.
+    // Snap on replay so vehicles don't visibly drive backward to their start positions.
+    const easing = rewound ? 1 : 1 - Math.exp(-delta * 2.4);
     ref.current.position.x += (targetX + vehicle.move[0] * 5.2 * proceedProgress - ref.current.position.x) * easing;
     ref.current.position.z += (targetZ + vehicle.move[2] * 5.2 * proceedProgress - ref.current.position.z) * easing;
   });

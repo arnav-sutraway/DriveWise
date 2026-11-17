@@ -39,6 +39,23 @@ python manage.py runserver
 3. Run `python manage.py ingest_documents --state Georgia --edition 2026`. Re-running replaces the same files. Changing the embedding model requires re-ingesting.
 4. To ingest a public web page, set its exact hostname in `KNOWLEDGE_ALLOWED_HOSTS` in `backend/.env` (for example `KNOWLEDGE_ALLOWED_HOSTS=dds.georgia.gov`), then run `python manage.py ingest_url https://dds.georgia.gov/... --state Georgia --edition 2026`. Only HTTPS pages from explicitly allowlisted hosts are fetched; redirects and non-public DNS addresses are rejected.
 
+Besides the two driver's manuals, `backend/data/manuals/` holds Georgia traffic law and Atlanta scooter rules: Georgia Code Title 40 Chapter 6 (Uniform Rules of the Road) and the § 40-1-1 definitions as statute-only Markdown (Public.Resource.Org release of November 2022, so later amendments are missing), the Georgia DPS low-speed and small vehicles guide (July 2024), Atlanta's dockless scooter ordinance 18-O-1322, and the City of Atlanta's scooter rider rules. The DPS guide and the Atlanta "Move Smart" flyer are table/column layouts that extract poorly, so they are ingested as faithful Markdown transcriptions; their original PDFs are kept in `backend/data/manuals/sources/`, which `ingest_documents` skips because it does not read subfolders.
+
+### Local testing without Gemini (Claude Code)
+
+The free Gemini tier runs out quickly, so there is a local-testing profile that uses no Gemini quota or API key. Answers come from your own Claude Code login (`claude -p`, run with every tool, plugin, MCP server, and saved session disabled, so a question can only produce text), and passages are found with the offline `hashing` embedder in a separate `db.local.sqlite3`, so they never mix with Gemini embeddings. Requires the `claude` CLI on your PATH and signed in.
+
+```powershell
+cd backend
+Copy-Item .env.local.example .env.local      # once
+$env:DRIVEWISE_ENV_FILE = ".env.local"       # this terminal only
+python manage.py migrate                     # once
+python manage.py ingest_documents --state Georgia   # once, offline, ~15 s
+python manage.py runserver
+```
+
+Open a new terminal (or run `Remove-Item Env:DRIVEWISE_ENV_FILE`) to go back to Gemini. Hashing retrieval matches keywords rather than meaning, so it misses synonyms (for example "helmet" vs. the law's "protective headgear"); use Gemini to judge answer quality. `CLAUDE_CODE_MODEL` (default `haiku` in the example file) picks the model.
+
 The same parsers are available to future upload/API flows via `apps.knowledge.services.file_ingestion.parse_text_upload` / `ingest_text_upload` and `apps.knowledge.services.web_ingestion.fetch_web_page` / `ingest_web_url`. Both paths pass extracted text through shared Unicode, control-character, entity, and whitespace cleanup before chunking and embedding. Text uploads are UTF-8 `.txt` or `.md` files limited to 10 MiB. Web responses support HTML, plain text, and JSON and are limited to 5 MiB.
 
 Pipeline (`backend/apps/`):
@@ -50,7 +67,7 @@ Pipeline (`backend/apps/`):
 | Embed (`RAG_EMBEDDER=gemini`, or `hashing` offline) | `knowledge/services/embedding_generation.py` |
 | Retrieve (cosine search, `RAG_TOP_K`, `RAG_MIN_SCORE`) | `knowledge/services/vector_retrieval.py` |
 | Build prompt | `chat/services/prompts.py` |
-| Generate (Gemini, `RAG_CHAT_MODEL`) | `chat/services/inference.py` |
+| Generate (Gemini `RAG_CHAT_MODEL`, or `RAG_LLM=claude_code` for local testing) | `chat/services/inference.py` |
 | Check the answer cites a retrieved passage | `chat/services/response_validation.py` |
 | Run the steps above | `chat/services/rag.py` |
 
@@ -58,11 +75,22 @@ Pipeline (`backend/apps/`):
 
 ```json
 {
-  "answer": "The grounded answer, with manual citations.",
+  "answer": "The grounded answer, with manual citations [2].",
   "grounded": true,
+  "sources": [
+    {
+      "number": 2,
+      "title": "Final GA Drivers Manual artwork 2023 2024 revised June 2023",
+      "page": 43,
+      "url": "/api/v1/documents/13/file/#page=43",
+      "official_url": null
+    }
+  ],
   "visualization": { "scene": "parking", "scenario_id": "parallel" }
 }
 ```
+
+`sources` lists only the passages the answer cites (empty for ungrounded answers). `url` opens the exact copy the coach read: `GET /api/v1/documents/<id>/file/` serves the ingested file inline (only supported files inside `data/manuals/`), and `#page=N` opens PDFs at the cited page. `official_url` is the public original, taken from `backend/data/manuals/source_links.json` (file name → https URL; read per request, so editing it needs no re-ingest) or from the page URL for `ingest_url` documents. The chat shows each `[n]` as a link and lists the sources under the answer.
 
 `visualization` is `null` for ungrounded answers or questions that do not clearly name a supported demonstration. The server maps only to predefined scene IDs; the model cannot supply animation instructions or arbitrary IDs. A grounded four-way-stop question opens the intersection demo, while a grounded question about parallel, perpendicular, reverse-in, or angle parking opens that parking lesson. Errors: 400 bad input, 503 missing API key, 502 provider failure.
 
@@ -181,5 +209,6 @@ backend/
   apps/frontend/ Serves the built SPA from Django
   apps/chat/    RAG pipeline, prompt, LLM inference, answer validation
   apps/knowledge/ Documents/chunks, PDF/text/web ingestion, preprocessing, embeddings, retrieval
-  data/manuals/ Source PDFs for the knowledge base
+  data/manuals/ Manuals, Georgia/Atlanta traffic law (PDF and Markdown) for the knowledge base;
+                sources/ keeps original PDFs of transcribed documents (not ingested)
 ```

@@ -3,6 +3,47 @@ import { scenarios, suggestedQuestions, suggestedPrompt } from '../data/drivingS
 import { parkingScenarios } from '../data/parkingScenarios.js';
 import { askCoach } from '../services/chatApi.js';
 import { clearChatHistory, loadChatHistory, saveChatHistory } from '../services/chatHistory.js';
+import { normalizeSources, sourceLabel, splitCitations } from '../services/citations.js';
+
+const linkProps = { target: '_blank', rel: 'noopener noreferrer' };
+
+// Answer text with each "[n]" linked to the passage it cites, when that source has a link.
+function AnswerText({ content, sources }) {
+  const byNumber = new Map(sources.map((source) => [source.number, source]));
+  return splitCitations(content).map((part, index) => {
+    if (part.type === 'text') return part.value;
+    const source = byNumber.get(part.number);
+    const label = `[${part.number}]`;
+    if (!source?.url) return label;
+    return (
+      <a key={index} className="citation-link" href={source.url} title={sourceLabel(source)} {...linkProps}>
+        {label}
+      </a>
+    );
+  });
+}
+
+function SourceList({ sources }) {
+  if (sources.length === 0) return null;
+  return (
+    <div className="source-list">
+      <span className="source-list-label">Sources</span>
+      <ol>
+        {sources.map((source) => (
+          <li key={source.number}>
+            <span className="source-number">[{source.number}]</span>
+            {source.url
+              ? <a href={source.url} {...linkProps}>{sourceLabel(source)}</a>
+              : <span>{sourceLabel(source)}</span>}
+            {source.officialUrl && source.officialUrl !== source.url && (
+              <a className="source-official" href={source.officialUrl} {...linkProps}>Official source ↗</a>
+            )}
+          </li>
+        ))}
+      </ol>
+    </div>
+  );
+}
 
 function isKnownVisualization(visualization) {
   if (visualization?.scene === 'intersection') {
@@ -51,6 +92,7 @@ export default function CoachChat({ onVisualization }) {
         role: 'assistant',
         content: response.answer,
         reminder: response.reminder,
+        sources: normalizeSources(response.sources),
         visualization,
       }]);
     } catch (error) {
@@ -112,7 +154,8 @@ export default function CoachChat({ onVisualization }) {
                     <span className="verified-pill"><span />Demo opened</span>
                   )}
                 </div>
-                <p>{message.content}</p>
+                <p><AnswerText content={message.content} sources={normalizeSources(message.sources)} /></p>
+                <SourceList sources={normalizeSources(message.sources)} />
                 {message.reminder && <div className="remember-box"><strong>Remember</strong><br />{message.reminder}</div>}
               </>
             )}
