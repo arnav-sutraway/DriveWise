@@ -16,7 +16,9 @@ from django.conf import settings
 
 from apps.chat.services.rag import answer_question
 from apps.chat.services.visualizations import visualization_for_question
+from apps.knowledge.models import Document
 from apps.knowledge.services.embedding_generation import ConfigurationError
+from apps.knowledge.services.sources import LOCAL_CONTENT_TYPES, local_file
 from apps.monitoring.metrics import monitor_chat, note_failure
 
 from .ratelimit import rate_limit
@@ -64,6 +66,7 @@ def chat(request):
     return JsonResponse({
         "answer": result.answer,
         "grounded": result.grounded,
+        "sources": result.sources,
         "visualization": visualization_for_question(message, grounded=result.grounded),
     })
 

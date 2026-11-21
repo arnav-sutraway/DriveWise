@@ -10,8 +10,11 @@ except ImportError:  # python-dotenv is optional
 BASE_DIR = Path(__file__).resolve().parent.parent
 FRONTEND_DIR = BASE_DIR.parent / "frontend"
 FRONTEND_BUILD_DIR = FRONTEND_DIR / "dist"
+# DRIVEWISE_ENV_FILE picks another env file, e.g. ".env.local" for the local-testing profile
+# (see .env.local.example). Relative paths are resolved from backend/.
+ENV_FILE = BASE_DIR / os.environ.get("DRIVEWISE_ENV_FILE", ".env")
 if load_dotenv:
-    load_dotenv(BASE_DIR / ".env")
+    load_dotenv(ENV_FILE)
 SECRET_KEY = os.environ.get("DJANGO_SECRET_KEY", "local-development-only-not-for-production")
 DEBUG = os.environ.get("DJANGO_DEBUG", "true").lower() == "true"
 ALLOWED_HOSTS = [
@@ -72,7 +75,8 @@ ASGI_APPLICATION = "config.asgi.application"
 DATABASES = {
     "default": {
         "ENGINE": "django.db.backends.sqlite3",
-        "NAME": BASE_DIR / "db.sqlite3",
+        # The local-testing profile uses its own file so offline embeddings never mix with Gemini ones.
+        "NAME": BASE_DIR / os.environ.get("SQLITE_PATH", "db.sqlite3"),
     }
 }
 
@@ -98,13 +102,17 @@ STATICFILES_DIRS = (
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 # --- RAG chatbot -----------------------------------------------------------
-# Providers: RAG_EMBEDDER = "gemini" | "hashing" (offline, no key); RAG_LLM = "gemini".
+# Providers: RAG_EMBEDDER = "gemini" | "hashing" (offline, no key);
+# RAG_LLM = "gemini" | "claude_code" (local testing through the Claude Code CLI, no API key).
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
 RAG_EMBEDDER = os.environ.get("RAG_EMBEDDER", "gemini")
 RAG_LLM = os.environ.get("RAG_LLM", "gemini")
 RAG_EMBEDDING_MODEL = os.environ.get("RAG_EMBEDDING_MODEL", "gemini-embedding-001")
 RAG_EMBEDDING_DIMENSIONS = int(os.environ.get("RAG_EMBEDDING_DIMENSIONS", "768"))
 RAG_CHAT_MODEL = os.environ.get("RAG_CHAT_MODEL", "gemini-3.1-flash-lite")
+CLAUDE_CODE_BIN = os.environ.get("CLAUDE_CODE_BIN", "claude")
+CLAUDE_CODE_MODEL = os.environ.get("CLAUDE_CODE_MODEL", "")  # Blank uses your Claude Code default.
+CLAUDE_CODE_TIMEOUT_SECONDS = int(os.environ.get("CLAUDE_CODE_TIMEOUT_SECONDS", "120"))
 RAG_TOP_K = int(os.environ.get("RAG_TOP_K", "5"))
 # Passages scoring below this cosine similarity are ignored. If nothing is left,
 # the bot says it couldn't find the answer instead of guessing (US 3).
