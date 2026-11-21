@@ -230,3 +230,11 @@ response evaluations, and persisted RAG configuration. Django session
 authentication and `is_staff` authorization protect every Developer API
 endpoint; regular accounts receive HTTP 403 and unauthenticated requests receive
 HTTP 401. Public registration is not enabled.
+
+For the Vercel deployment, `/developer/` is rewritten to the SPA entry point and
+the Developer API is proxied to the configured PythonAnywhere backend. Deploy
+the backend changes and run `python manage.py migrate` there before using the
+portal; create a staff account with `python manage.py createsuperuser`. Set
+`DJANGO_CSRF_TRUSTED_ORIGINS=https://drive-wise-beryl.vercel.app` in the backend
+environment (and retain secure cookies with `DJANGO_DEBUG=false`) to allow
+session login through the Vercel origin.
