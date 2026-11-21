@@ -4,6 +4,14 @@
     {
       "source": "/api/(.*)",
       "destination": "https://pchen432.pythonanywhere.com/api/$1"
+    },
+    {
+      "source": "/developer",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/developer/(.*)",
+      "destination": "/index.html"
     }
   ]
 }

@@ -23,7 +23,14 @@ async function api(path, options = {}) {
     headers,
   });
   const payload = await response.json().catch(() => ({ detail: 'Invalid server response.' }));
-  if (!response.ok) throw new Error(payload.detail || 'Request failed');
+  if (!response.ok) {
+    if (response.status === 404 && path.startsWith('/')) {
+      throw new Error(
+        'The Developer API is not available on the production backend yet. Deploy the latest backend code and run its database migrations.',
+      );
+    }
+    throw new Error(payload.detail || 'Request failed');
+  }
   return payload;
 }
 

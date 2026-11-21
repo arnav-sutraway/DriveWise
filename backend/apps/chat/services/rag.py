@@ -26,6 +26,7 @@ class ChatResult:
     grounded: bool
     # The passages the answer cites: [{"number", "title", "page", "url", "official_url"}].
     sources: list[dict] = field(default_factory=list)
+    retrieved_chunks: list = field(default_factory=list)
 
 
 def answer_question(question: str, embedder=None, llm=None, retriever=None) -> ChatResult:
@@ -50,7 +51,7 @@ def answer_question(question: str, embedder=None, llm=None, retriever=None) -> C
         retrieved = retriever.search(query_embedding,
                                      top_k=top_k, min_score=min_score)
     if not retrieved:
-        return ChatResult(NO_ANSWER_MESSAGE, grounded=False, retrieved_chunks=[])
+            return ChatResult(NO_ANSWER_MESSAGE, grounded=False)
 
     system_prompt, user_prompt = build_prompt(question, retrieved)
     with time_stage("generation"):
@@ -58,6 +59,7 @@ def answer_question(question: str, embedder=None, llm=None, retriever=None) -> C
 
     validation = CitationValidator().validate(raw_answer, len(retrieved))
     if not validation.grounded:
-        return ChatResult(NO_ANSWER_MESSAGE, grounded=False)
+        return ChatResult(NO_ANSWER_MESSAGE, grounded=False, retrieved_chunks=retrieved)
     return ChatResult(validation.answer, grounded=True,
-                      sources=describe_sources(retrieved, validation.cited))
+                      sources=describe_sources(retrieved, validation.cited),
+                      retrieved_chunks=retrieved)

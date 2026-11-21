@@ -7,7 +7,8 @@ from functools import wraps
 from pathlib import Path
 
 from django.contrib.auth import authenticate, login, logout
-from django.http import JsonResponse
+from django.http import FileResponse, Http404, JsonResponse
+from django.shortcuts import get_object_or_404
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET, require_POST
 from django.views.decorators.csrf import ensure_csrf_cookie
@@ -71,6 +72,20 @@ def chat(request):
     })
 
 
+@require_GET
+def document_file(request, document_id):
+    """Serve the ingested copy for citations, limited to supported files under KNOWLEDGE_DATA_DIR."""
+    document = get_object_or_404(Document, pk=document_id)
+    path = local_file(document)
+    if path is None:
+        raise Http404("This document has no local copy.")
+    return FileResponse(
+        path.open("rb"),
+        filename=path.name,
+        content_type=LOCAL_CONTENT_TYPES[path.suffix.lower()],
+    )
+
+
 def _developer_required(view):
     @wraps(view)
     def wrapped(request, *args, **kwargs):
@@ -118,7 +133,6 @@ def developer_csrf(request):
     return JsonResponse({"detail": "CSRF cookie ready."})
 
 
-@csrf_exempt
 def developer_session(request):
     if request.method == "GET":
         if request.user.is_authenticated and request.user.is_active and request.user.is_staff:
