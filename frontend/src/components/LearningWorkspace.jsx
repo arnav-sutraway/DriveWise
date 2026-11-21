@@ -44,6 +44,7 @@ export default function LearningWorkspace() {
           <span className="practice-tag"><i />Practice mode</span>
           <a href="#quick-rules" onClick={() => setExperience('lesson')}>Quick rules <span>↗</span></a>
           <a href={ADMIN_URL}>Admin <span>↗</span></a>
+          <a href="/developer/">Developer <span>↗</span></a>
         </div>
       </header>
       <nav className="main-nav" aria-label="Main navigation">

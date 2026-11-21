@@ -183,3 +183,21 @@ backend/
   apps/knowledge/ Documents/chunks, PDF/text/web ingestion, preprocessing, embeddings, retrieval
   data/manuals/ Source PDFs for the knowledge base
 ```
+
+## Developer Portal
+
+Create an authorized staff account for local development:
+
+```bash
+cd backend
+python manage.py migrate
+python manage.py createsuperuser
+python manage.py runserver
+```
+
+Open `http://127.0.0.1:8000/developer/` and sign in with that staff account. The
+portal includes document management, file/text/URL ingestion, chunk previews,
+response evaluations, and persisted RAG configuration. Django session
+authentication and `is_staff` authorization protect every Developer API
+endpoint; regular accounts receive HTTP 403 and unauthenticated requests receive
+HTTP 401. Public registration is not enabled.

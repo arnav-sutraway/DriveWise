@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from django.db import transaction
+from django.utils import timezone
 
 if TYPE_CHECKING:
     from ..models import Document
@@ -34,13 +35,20 @@ def ingest_pages(
     state: str = "",
     edition: str = "",
     embedder: "EmbeddingGenerator | None" = None,
+    chunk_words: int | None = None,
+    overlap_words: int | None = None,
+    metadata: dict | None = None,
 ) -> "Document":
     """Clean, chunk, embed, and save pages as one document."""
     from ..models import Chunk, Document
     from .embedding_generation import get_embedder
-    from .preprocessing import chunk_pages
+    from .preprocessing import CHUNK_WORDS, OVERLAP_WORDS, chunk_pages, clean_text
 
-    text_chunks = chunk_pages(pages)
+    text_chunks = chunk_pages(
+        pages,
+        chunk_words=chunk_words if chunk_words is not None else CHUNK_WORDS,
+        overlap_words=overlap_words if overlap_words is not None else OVERLAP_WORDS,
+    )
     if not text_chunks:
         raise ValueError(f"No usable text found in {title}.")
 
@@ -52,8 +60,24 @@ def ingest_pages(
     with transaction.atomic():
         if source_path:
             Document.objects.filter(source_path=source_path).delete()
-        document = Document.objects.create(title=title, state=state, edition=edition,
-                                           source_path=source_path)
+        document_fields = {
+            "title": title,
+            "state": state,
+            "edition": edition,
+            "source_path": source_path,
+            "raw_text": clean_text("\n\n".join(page.text for page in pages)),
+            "processing_status": "indexed",
+            "last_processed_at": timezone.now(),
+        }
+        if metadata:
+            allowed = {
+                "source_url", "description", "category", "source_organization",
+                "jurisdiction",
+            }
+            document_fields.update(
+                {key: value for key, value in metadata.items() if key in allowed}
+            )
+        document = Document.objects.create(**document_fields)
         Chunk.objects.bulk_create(
             [
                 Chunk(document=document, position=i, page=chunk.page, text=chunk.text, embedding=vector)

@@ -2,22 +2,25 @@ import { defineConfig } from 'vitest/config';
 import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
 
-export default defineConfig({
-  // Django serves the build under /static/frontend/; Vercel (which sets VERCEL=1) serves it at the root.
-  base: process.env.VERCEL ? '/' : '/static/frontend/',
-  plugins: [react(), tailwindcss()],
-  server: {
-    host: true,
-    allowedHosts: true,
-    strictPort: false,
-    proxy: {
-      '/api': {
-        target: 'http://127.0.0.1:8000',
-        changeOrigin: true,
+export default defineConfig(({ command }) => {
+  // Django serves production assets under /static/frontend/; Vite dev serves from the origin root.
+  const base = process.env.VERCEL ? '/' : (command === 'serve' ? '/' : '/static/frontend/');
+
+  return {
+    base,
+    plugins: [react(), tailwindcss()],
+    server: {
+      host: true,
+      allowedHosts: true,
+      strictPort: false,
+      proxy: {
+        '/api': {
+          target: 'http://127.0.0.1:8000',
+          changeOrigin: true,
+        },
       },
     },
-  },
-  build: {
+    build: {
     chunkSizeWarningLimit: 750,
     rollupOptions: {
       output: {
@@ -30,9 +33,10 @@ export default defineConfig({
         },
       },
     },
-  },
-  test: {
-    environment: 'jsdom',
-    clearMocks: true,
-  },
+    },
+    test: {
+      environment: 'jsdom',
+      clearMocks: true,
+    },
+  };
 });
