@@ -33,6 +33,7 @@ class RequestMonitoringTests(TestCase):
                 self.assertEqual(response.json(), {
                     "answer": "Yield [1].",
                     "grounded": True,
+                    "intent": "general",
                     "sources": [],
                     "visualization": None,
                 })

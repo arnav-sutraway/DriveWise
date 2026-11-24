@@ -4,6 +4,7 @@ import { parkingScenarios } from '../data/parkingScenarios.js';
 import { askCoach } from '../services/chatApi.js';
 import { clearChatHistory, loadChatHistory, saveChatHistory } from '../services/chatHistory.js';
 import { normalizeSources, sourceLabel, splitCitations } from '../services/citations.js';
+import { intentLabel } from '../services/intents.js';
 
 const linkProps = { target: '_blank', rel: 'noopener noreferrer' };
 
@@ -91,6 +92,7 @@ export default function CoachChat({ onVisualization }) {
       setMessages((current) => [...current, {
         role: 'assistant',
         content: response.answer,
+        intent: response.grounded ? response.intent : null,
         reminder: response.reminder,
         sources: normalizeSources(response.sources),
         visualization,
@@ -150,11 +152,16 @@ export default function CoachChat({ onVisualization }) {
                 <div className="message-author">
                   <span className="avatar avatar-small">DW</span>
                   DriveWise coach
+                  {intentLabel(message.intent) && (
+                    <span className="intent-pill" title="Question type the coach answered as">
+                      {intentLabel(message.intent)}
+                    </span>
+                  )}
                   {message.visualization && (
                     <span className="verified-pill"><span />Demo opened</span>
                   )}
                 </div>
-                <p><AnswerText content={message.content} sources={normalizeSources(message.sources)} /></p>
+                <p className="answer-text"><AnswerText content={message.content} sources={normalizeSources(message.sources)} /></p>
                 <SourceList sources={normalizeSources(message.sources)} />
                 {message.reminder && <div className="remember-box"><strong>Remember</strong><br />{message.reminder}</div>}
               </>

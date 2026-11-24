@@ -104,6 +104,10 @@ main { max-width: 1440px; margin: auto; padding: 25px max(5.2vw, 24px) 52px; }
 .coach-message { max-width: 100%; margin-bottom: 12px; padding: 9px 11px; border: 1px solid #e7edf1; border-radius: 3px 9px 9px 9px; background: #fff; }
 .message-author { display: flex; align-items: center; color: #466174; font-size: 8px; font-weight: 750; }
 .message-author .verified-pill { margin-left: auto; }
+.intent-pill { margin-left: auto; padding: 4px 8px; border-radius: 999px; color: #315b77; background: #e8f1f6; font-size: 8px; font-weight: 700; white-space: nowrap; }
+.message-author .intent-pill + .verified-pill { margin-left: 6px; }
+/* Keep the model's line breaks so numbered steps and practice questions stay one per line. */
+.coach-message > p.answer-text { white-space: pre-line; }
 .remember-box { margin-top: 10px; border-left: 2px solid var(--amber); padding: 6px 8px; background: #fff9ee; color: #647483; font-size: 8px; line-height: 1.55; }
 .remember-box strong { color: #765626; }
 .loading-message { padding: 12px; }
@@ -186,7 +190,7 @@ footer > span:nth-child(2) i { margin-left: 8px; color: #9aa8b2; font-style: nor
   .lesson-progress { font-size: 7px; }
   .chat-panel, .scene-panel { padding: 13px; }
   .chat-panel { min-height: 480px; }
-  .verified-pill { font-size: 7px; padding: 4px 6px; }
+  .verified-pill, .intent-pill { font-size: 7px; padding: 4px 6px; }
   .scene-canvas { height: 280px; }
   .scene-controls { align-items: flex-start; }
   .scene-controls > .action-button { flex-shrink: 0; }
@@ -336,7 +340,7 @@ main {
   font-size: 9px;
 }
 
-.verified-pill, .scene-live {
+.verified-pill, .scene-live, .intent-pill {
   padding: 7px 10px;
   font-size: 10px;
 }
@@ -583,7 +587,7 @@ a:focus-visible, button:focus-visible, textarea:focus-visible {
     font-size: 10px;
   }
 
-  .verified-pill {
+  .verified-pill, .intent-pill {
     font-size: 8px;
   }
 

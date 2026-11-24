@@ -6,6 +6,18 @@
       "destination": "https://pchen432.pythonanywhere.com/api/$1"
     },
     {
+      "source": "/admin",
+      "destination": "https://pchen432.pythonanywhere.com/admin/"
+    },
+    {
+      "source": "/admin/(.*)",
+      "destination": "https://pchen432.pythonanywhere.com/admin/$1"
+    },
+    {
+      "source": "/static/(.*)",
+      "destination": "https://pchen432.pythonanywhere.com/static/$1"
+    },
+    {
       "source": "/developer",
       "destination": "/index.html"
     },

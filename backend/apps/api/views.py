@@ -39,7 +39,7 @@ def health(request):
 @monitor_chat
 @require_POST
 def chat(request):
-    """POST {"message": "..."} -> {"answer": str, "grounded": bool}."""
+    """POST {"message": "..."} -> {"answer", "grounded", "intent", "sources", "visualization"}."""
     try:
         payload = json.loads(request.body or b"{}")
     except (json.JSONDecodeError, UnicodeDecodeError):
@@ -67,6 +67,7 @@ def chat(request):
     return JsonResponse({
         "answer": result.answer,
         "grounded": result.grounded,
+        "intent": result.intent,
         "sources": result.sources,
         "visualization": visualization_for_question(message, grounded=result.grounded),
     })

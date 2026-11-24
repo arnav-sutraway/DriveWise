@@ -25,9 +25,13 @@ class FakeLLM:
     def __init__(self, reply):
         self.reply = reply
         self.prompts = []
+        self.system_prompts = []
+        self.temperatures = []
 
-    def generate(self, system_prompt, user_prompt):
+    def generate(self, system_prompt, user_prompt, temperature=0.2):
+        self.system_prompts.append(system_prompt)
         self.prompts.append(user_prompt)
+        self.temperatures.append(temperature)
         return self.reply
 
 
@@ -170,6 +174,121 @@ class RagPipelineTests(RagTestCase):
         self.assertEqual(llm.prompts, [])
 
 
+class QuestionTypeTests(TestCase):
+    """US 8: the question type is decided by code at runtime, and it changes the prompt."""
+
+    def test_classifies_each_question_type(self):
+        from apps.chat.services import intents
+
+        examples = {
+            intents.FACTUAL: [
+                "What is the speed limit in a school zone?",
+                "Who goes first at a four-way stop?",
+                "Can I turn right on red?",
+                "How far before a turn should I signal?",
+                "Is it legal to use a phone while driving?",
+            ],
+            intents.EXPLANATION: [
+                "Why do I have to stop for a school bus?",
+                "How does a four-way stop work?",
+                "Explain the move over law.",
+                "What does a yellow diamond sign mean?",
+                "What's the difference between a yield sign and a stop sign?",
+            ],
+            intents.PROCEDURE: [
+                "How do I parallel park?",
+                "How to merge onto a highway",
+                "Walk me through a three-point turn.",
+                "What are the steps for changing lanes?",
+            ],
+            intents.SCENARIO: [
+                "What should I do if an ambulance is behind me?",
+                "What if two cars reach a four-way stop at the same time?",
+                "If my tire blows out on the highway, what do I do?",
+                "What happens if I miss my exit?",
+                "Suppose a police officer pulls me over at night.",
+            ],
+            intents.CREATIVE: [
+                "Quiz me on road signs.",
+                "Give me some practice questions about parking.",
+                "Help me remember the following distances.",
+                "Make up a mnemonic for four-way stops.",
+            ],
+            intents.GENERAL: [
+                "Tips for driving in the rain",
+                "Tell me about school zones",
+            ],
+        }
+        for expected, questions in examples.items():
+            for question in questions:
+                with self.subTest(question=question):
+                    self.assertEqual(intents.classify_question(question), expected)
+
+    def test_classification_ignores_case_spacing_and_curly_apostrophes(self):
+        from apps.chat.services.intents import PROCEDURE, SCENARIO, classify_question
+
+        self.assertEqual(classify_question("  HOW   DO I parallel park?  "), PROCEDURE)
+        self.assertEqual(classify_question("Let’s say I’m stuck on the tracks"), SCENARIO)
+
+    def test_every_question_type_builds_a_different_grounded_prompt(self):
+        from apps.chat.services.intents import QUESTION_TYPES
+        from apps.chat.services.prompts import BASE_RULES, build_system_prompt
+
+        prompts = {question_type: build_system_prompt(question_type)
+                   for question_type in QUESTION_TYPES}
+        self.assertEqual(len(set(prompts.values())), len(QUESTION_TYPES))
+        for question_type, prompt in prompts.items():
+            with self.subTest(question_type=question_type):
+                # The grounding and citation rules are never dropped.
+                self.assertTrue(prompt.startswith(BASE_RULES))
+                self.assertIn("NO_ANSWER", prompt)
+
+    def test_unknown_type_falls_back_to_general(self):
+        from apps.chat.services.intents import GENERAL
+        from apps.chat.services.prompts import build_system_prompt
+
+        self.assertEqual(build_system_prompt("made-up"), build_system_prompt(GENERAL))
+
+
+class QuestionTypePipelineTests(RagTestCase):
+    def test_pipeline_uses_the_profile_for_the_question_type(self):
+        from apps.chat.services.prompts import PROMPT_PROFILES
+
+        cases = {
+            "factual": "Who goes first at a four-way stop?",
+            "procedure": "How do I get through a four-way stop?",
+            "creative": "Quiz me on four-way stop rules.",
+        }
+        for intent, question in cases.items():
+            with self.subTest(intent=intent):
+                llm = FakeLLM("Yield to the driver on your right [1].")
+                result = answer_question(question, llm=llm)
+                profile = PROMPT_PROFILES[intent]
+                self.assertEqual(result.intent, intent)
+                self.assertIn(f"Question type: {profile.label}", llm.system_prompts[0])
+                self.assertIn(profile.instructions, llm.system_prompts[0])
+                self.assertEqual(llm.temperatures, [profile.temperature])
+
+    def test_procedure_questions_retrieve_more_passages(self):
+        from apps.chat.services.prompts import PROMPT_PROFILES
+
+        top_ks = []
+
+        class RecordingRetriever:
+            def search(self, embedding, top_k, min_score):
+                top_ks.append(top_k)
+                return []
+
+        answer_question("Who goes first at a four-way stop?", retriever=RecordingRetriever())
+        answer_question("How do I get through a four-way stop?", retriever=RecordingRetriever())
+        self.assertEqual(top_ks[1] - top_ks[0], PROMPT_PROFILES["procedure"].extra_passages)
+
+    def test_no_answer_still_reports_the_question_type(self):
+        result = answer_question("How do I parallel park?", llm=FakeLLM("NO_ANSWER"))
+        self.assertFalse(result.grounded)
+        self.assertEqual(result.intent, "procedure")
+
+
 @override_settings(CHAT_RATE_LIMIT=0)
 class ApiEndpointTests(RagTestCase):
     def post(self, data):
@@ -191,6 +310,7 @@ class ApiEndpointTests(RagTestCase):
         self.assertEqual(response.json(), {
             "answer": "Yield to the driver on your right [1].",
             "grounded": True,
+            "intent": "factual",
             # The test document's source_path is not a real file and has no official link.
             "sources": [{"number": 1, "title": "Georgia Driver's Manual", "page": 34,
                          "url": None, "official_url": None}],
@@ -237,7 +357,7 @@ class ApiEndpointTests(RagTestCase):
 
     def test_provider_failure_returns_502(self):
         class BrokenLLM:
-            def generate(self, *_):
+            def generate(self, *_, **__):
                 raise RuntimeError("quota exceeded")
 
         with mock.patch("apps.chat.services.rag.get_llm", return_value=BrokenLLM()), \

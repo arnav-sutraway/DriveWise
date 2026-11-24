@@ -66,7 +66,8 @@ Pipeline (`backend/apps/`):
 | Clean and split text into chunks | `knowledge/services/preprocessing.py` |
 | Embed (`RAG_EMBEDDER=gemini`, or `hashing` offline) | `knowledge/services/embedding_generation.py` |
 | Retrieve (cosine search, `RAG_TOP_K`, `RAG_MIN_SCORE`) | `knowledge/services/vector_retrieval.py` |
-| Build prompt | `chat/services/prompts.py` |
+| Sort the question into a type (factual, explanation, procedure, scenario, creative, general) | `chat/services/intents.py` |
+| Build the prompt for that type | `chat/services/prompts.py` |
 | Generate (Gemini `RAG_CHAT_MODEL`, or `RAG_LLM=claude_code` for local testing) | `chat/services/inference.py` |
 | Check the answer cites a retrieved passage | `chat/services/response_validation.py` |
 | Run the steps above | `chat/services/rag.py` |
@@ -77,6 +78,7 @@ Pipeline (`backend/apps/`):
 {
   "answer": "The grounded answer, with manual citations [2].",
   "grounded": true,
+  "intent": "factual",
   "sources": [
     {
       "number": 2,
@@ -91,6 +93,23 @@ Pipeline (`backend/apps/`):
 ```
 
 `sources` lists only the passages the answer cites (empty for ungrounded answers). `url` opens the exact copy the coach read: `GET /api/v1/documents/<id>/file/` serves the ingested file inline (only supported files inside `data/manuals/`), and `#page=N` opens PDFs at the cited page. `official_url` is the public original, taken from `backend/data/manuals/source_links.json` (file name → https URL; read per request, so editing it needs no re-ingest) or from the page URL for `ingest_url` documents. The chat shows each `[n]` as a link and lists the sources under the answer.
+
+`intent` is the question type that picked the prompt (story 8); see below.
+
+### Prompts by question type (story 8)
+
+Before retrieval, `classify_question` in `chat/services/intents.py` sorts each question with ordered regular-expression rules (first match wins):
+
+| Type | Example | Label in chat | Answer shape | Passages | Temperature |
+| --- | --- | --- | --- | --- | --- |
+| `creative` | "Quiz me on road signs" | Practice | 3 practice questions with answers, or a memory aid | top_k + 2 | 0.6 |
+| `scenario` | "What should I do if an ambulance is behind me?" | Your situation | What to do, then the rule, then what isn't covered | top_k | 0.2 |
+| `procedure` | "How do I parallel park?" | Step-by-step | Numbered steps, one per line, each cited | top_k + 3 | 0.2 |
+| `explanation` | "Why do I have to stop for a school bus?" | Explanation | The rule and the reason the manual gives | top_k | 0.3 |
+| `factual` | "What is the speed limit in a school zone?" | Quick answer | Direct answer first, under 60 words | top_k | 0.1 |
+| `general` | anything else | (none) | Clear, brief answer | top_k | 0.2 |
+
+`build_prompt` then combines the shared grounding rules (answer only from the passages, cite every rule, reply `NO_ANSWER` when they don't cover it) with that type's instructions and word limit from `PROMPT_PROFILES` in `chat/services/prompts.py`. The grounding rules never change, so the citation check works the same for every type. The local Claude Code profile has no temperature option and ignores it. To add a type, add a rule in `intents.py`, a profile in `prompts.py`, and a label in `frontend/src/services/intents.js`.
 
 `visualization` is `null` for ungrounded answers or questions that do not clearly name a supported demonstration. The server maps only to predefined scene IDs; the model cannot supply animation instructions or arbitrary IDs. A grounded four-way-stop question opens the intersection demo, while a grounded question about parallel, perpendicular, reverse-in, or angle parking opens that parking lesson. Errors: 400 bad input, 503 missing API key, 502 provider failure.
 
@@ -110,7 +129,7 @@ For local development, Django uses SQLite and a development-only secret key. Set
 
 The `.azure/` directory contains project-planning and integration handoff documents from the original Azure planning workflow. Django and Vite do not read it at runtime, so it can be removed if those planning records are no longer useful.
 
-## Performance monitoring (story 4)
+## Performance monitoring (story 10)
 
 Monitoring runs locally in Django. After installing the backend requirements:
 
@@ -232,7 +251,10 @@ endpoint; regular accounts receive HTTP 403 and unauthenticated requests receive
 HTTP 401. Public registration is not enabled.
 
 For the Vercel deployment, `/developer/` is rewritten to the SPA entry point and
-the Developer API is proxied to the configured PythonAnywhere backend. Deploy
+the Developer API is proxied to the configured PythonAnywhere backend. `/admin/`
+and `/static/` are proxied there too, so the site's Admin link opens the Django
+admin, performance dashboard, and usage logs on the Vercel domain; signing in
+there relies on the same `DJANGO_CSRF_TRUSTED_ORIGINS` setting. Deploy
 the backend changes and run `python manage.py migrate` there before using the
 portal; create a staff account with `python manage.py createsuperuser`. Set
 `DJANGO_CSRF_TRUSTED_ORIGINS=https://drive-wise-beryl.vercel.app` in the backend

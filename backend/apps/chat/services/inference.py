@@ -10,8 +10,12 @@ from django.conf import settings
 from apps.knowledge.services.embedding_generation import ConfigurationError
 
 
+DEFAULT_TEMPERATURE = 0.2
+
+
 class LLMInference(Protocol):
-    def generate(self, system_prompt: str, user_prompt: str) -> str:
+    def generate(self, system_prompt: str, user_prompt: str,
+                 temperature: float = DEFAULT_TEMPERATURE) -> str:
         ...
 
 
@@ -27,7 +31,8 @@ class GeminiInference:
         ))
         self.model = model
 
-    def generate(self, system_prompt: str, user_prompt: str) -> str:
+    def generate(self, system_prompt: str, user_prompt: str,
+                 temperature: float = DEFAULT_TEMPERATURE) -> str:
         from google.genai import types
 
         response = self.client.models.generate_content(
@@ -35,7 +40,7 @@ class GeminiInference:
             contents=user_prompt,
             config=types.GenerateContentConfig(
                 system_instruction=system_prompt,
-                temperature=0.2,
+                temperature=temperature,
                 # Answers only restate manual passages, so little "thinking" is needed; keeps replies fast.
                 thinking_config=types.ThinkingConfig(thinking_level=types.ThinkingLevel.MINIMAL),
             ),
@@ -51,10 +56,10 @@ class ClaudeCodeInference:
     turns the prompt into text: a learner's question cannot make it run commands or read files.
     """
 
-    # The chat bubble renders plain text (no Markdown, line breaks collapse), and Claude
-    # otherwise tends to answer with bold text and lists.
-    PLAIN_TEXT_RULE = ("\n6. Write plain sentences in one or two short paragraphs. Do not use Markdown: "
-                       "no bold, headings, bullet points, or numbered lists.")
+    # The chat bubble renders plain text (line breaks are kept, Markdown is not), and Claude
+    # otherwise tends to answer with bold text and bullet lists.
+    PLAIN_TEXT_RULE = ("\n\nFormatting reminder: plain text only. Do not use Markdown (no bold, "
+                       "headings, or bullet symbols). Numbered steps, when asked for, go one per line.")
 
     def __init__(self, binary: str = "claude", model: str = "", timeout_seconds: int = 120):
         executable = shutil.which(binary)
@@ -67,7 +72,10 @@ class ClaudeCodeInference:
         self.model = model
         self.timeout_seconds = timeout_seconds
 
-    def generate(self, system_prompt: str, user_prompt: str) -> str:
+    def generate(self, system_prompt: str, user_prompt: str,
+                 temperature: float = DEFAULT_TEMPERATURE) -> str:
+        # The Claude Code CLI has no temperature option, so local testing ignores it;
+        # the per-type instructions in the system prompt still apply.
         command = [
             self.executable, "-p",
             "--tools", "",
